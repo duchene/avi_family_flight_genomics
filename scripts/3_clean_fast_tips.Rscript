@@ -1,6 +1,6 @@
 library(MASS)
 library(phangorn)
-source("trimLongTipBrs.R")
+source("../functions/trimLongTipBrs.R")
 
 loci <- grep("fasta$", dir("basic_alignments"), value = T)
 

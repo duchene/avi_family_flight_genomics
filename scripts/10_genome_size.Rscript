@@ -2,7 +2,7 @@ library(phangorn)
 
 taxa <- c("Rhea_pennata", "Tinamus_guttatus", "Chauna_torquata", "Anas_platyrhynchos", "Gallus_gallus", "Coturnix_japonica", "Meleagris_gallopavo", "Tympanuchus_cupido", "Podilymbus_podiceps", "Podiceps_cristatus", "Mesitornis_unicolor", "Pterocles_gutturalis", "Columba_livia", "Patagioenas_fasciata", "Tauraco_erythrolophus", "Corythaixoides_concolor", "Lophotis_ruficrista", "Chlamydotis_macqueenii", "Geococcyx_californianus", "Crotophaga_sulcirostris", "Ceuthmochares_aereus", "Cuculus_canorus", "Antrostomus_carolinensis", "Chordeiles_acutipennis", "Hemiprocne_comata", "Chaetura_pelagica", "Oreotrochilus_melanogaster", "Calypte_anna", "Rhynochetos_jubatus", "Phaethon_lepturus", "Aptenodytes_forsteri", "Pelecanoides_urinatrix", "Mesembrinibis_cayennensis", "Nipponia_nippon", "Cochlearius_cochlearius", "Egretta_garzetta", "Scopus_umbretta", "Pelecanus_crispus", "Phalacrocorax_harrisi", "Phalacrocorax_carbo", "Atlantisia_rogersi", "Heliornis_fulica", "Psophia_crepitans", "Balearica_regulorum", "Charadrius_vociferus", "Charadrius_alexandrinus", "Alca_torda", "Aquila_chrysaetos", "Haliaeetus_albicilla", "Colius_striatus", "Urocolius_indicus", "Strix_occidentalis", "Tyto_alba", "Trogon_melanurus", "Apaloderma_vittatum", "Bucorvus_abyssinicus", "Buceros_rhinoceros", "Eurystomus_gularis", "Merops_nubicus", "Picoides_pubescens", "Indicator_maculatus", "Cariama_cristata", "Chunga_burmeisteri", "Herpetotheres_cachinnans", "Falco_peregrinus", "Nestor_notabilis", "Melopsittacus_undulatus", "Scytalopus_superciliaris", "Campylorhamphus_procurvoides", "Manacus_manacus", "Lepidothrix_coronata", "Menura_novaehollandiae", "Atrichornis_clamosus", "Orthonyx_spaldingii", "Pomatostomus_ruficeps", "Aphelocoma_coerulescens", "Corvus_brachyrhynchos", "Panurus_biarmicus", "Alaudala_cheleensis", "Taeniopygia_guttata", "Lonchura_striata", "Geospiza_fortis", "Nesospiza_acunhae")
 
-sampdat <- read.csv("Supplementary_Table_1.csv", header = T, row.names = 1)
+sampdat <- read.csv("../data/Supplementary_Table_1.csv", header = T, row.names = 1)
 
 sampdat$Latin.name <- gsub(" ", "_", sampdat$Latin.name)
  
@@ -10,7 +10,7 @@ sampdat$Contig_N50..bp. <- as.numeric(gsub(",", "", sampdat$Contig_N50..bp.))
 
 rownames(sampdat) <- sampdat$Latin.name
 
-tax <- read.csv("taxonomy_codes.csv", header = T, row.names = 1)
+tax <- read.csv("../data/taxonomy_codes.csv", header = T, row.names = 1)
 tax <- tax[taxa,]
 sampdat <- sampdat[taxa,c(4:5, 8, 11, 14:30)]
 sampdat <- cbind(tax, sampdat)
@@ -20,7 +20,7 @@ rownames(rawcompdat)[47] <- "Pinguinus_impennis"
 
 # Collect great auk data
 
-aukdat <- read.dna("GreatAuk/OUT-0003_gff_aln-q30_razorbill_v2_sort9_clean_greatAuk.fa", format = 'fasta')
+aukdat <- read.dna("../data/OUT-0003_gff_aln-q30_razorbill_v2_sort9_clean_greatAuk.fa", format = 'fasta')
 auklen <- sum(sapply(aukdat, length), na.rm = T)
 aukgc <- GC.content(aukdat)
 aukNloc <- length(aukdat)
@@ -54,7 +54,7 @@ comptypes <- c("FD", "SM", "DV", "DV", "VV", "DV", "SM", "VV", "SM", "DV", "SM",
 rownames(compdat) <- paste0(compnames, "-", comptypes)
 colnames(compdat) <- colnames(rawcompdat)[7:ncol(rawcompdat)]
 
-write.csv(compdat, file = "genomic_comparisons_data.csv")
+write.csv(compdat, file = "../data/genomic_comparisons_data.csv")
 
 
 tomstests <- list()
@@ -76,7 +76,7 @@ restab <- do.call("rbind", lapply(tomstests, function(x) as.numeric(sapply(x, fu
 rownames(restab) <- names(tomstests)[-58]
 colnames(restab) <- as.character(sapply(names(tomstests[[1]]), function(x) c(paste0(x, "_N"), paste0(x, "_pval"))))
 
-write.csv(restab[-grep("BUSCO|Depth|Contig|Scaffold", rownames(restab)),], file = "genomic_twosidedTests.csv")
+write.csv(restab[-grep("BUSCO|Depth|Contig|Scaffold", rownames(restab)),], file = "../data/genomic_twosidedTests.csv")
 
 # Plot a few of the raw comparison variables - CURRENTLY FOCUS ON THE SCAFF N50 CORRECTED DATA
 

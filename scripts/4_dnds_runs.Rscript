@@ -2,7 +2,7 @@ library(phangorn)
 
 loci <- grep("[.]fasta$", dir("postshrink_alignments"), value = T)
 
-tempctl <- readLines("dnds_template.ctl")
+tempctl <- readLines("../data/dnds_template.ctl")
 setwd("dnds_analyses")
 
 for(i in 1:length(loci)){

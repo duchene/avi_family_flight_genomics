@@ -1,12 +1,12 @@
 library(phangorn)
-load("dnds_sisdifs_vol.Rdata")
+load("../data/dnds_sisdifs_vol.Rdata")
 
 tr <- read.tree("dated.auk.tre")
 
 Cramers_V <- function(chi, n, df) sqrt((chi)/(n * df))
 
-tax <- read.csv("taxon_comparisons_fless_flying.csv", header = T, row.names = 1)
-codes <- read.csv("taxonomy_codes.csv", header = T, row.names = 1)
+tax <- read.csv("../data/taxon_comparisons_fless_flying.csv", header = T, row.names = 1)
+codes <- read.csv("../data/taxonomy_codes.csv", header = T, row.names = 1)
 rownames(codes) <- codes$code
 tax$trname <- codes[rownames(tax), "taxa"]
 tax$trname[which(is.na(tax$trname))] <- "Pinguinus_impennis"
@@ -59,7 +59,7 @@ datFles <- pasfaipair[!grepl("SM|VV|DD", pasfaipair$comparison),]
 
 extremes <- c("GALGAL-COTJAP_DV", "CEUAER-CUCCAN_SM", "HEMCOM-CHAPEL_SM", "RHYJUB-PHALEP_DV", "SCOUMB-PELCRI_SM", "HERCAC-FALPER_SM")
 
-pdf("Fig_2_age_rate_corrs.pdf", height = 9, width = 8, useDingbats = F)
+pdf("../figures/Fig_2_age_rate_corrs.pdf", height = 9, width = 8, useDingbats = F)
 par(mfrow = c(3, 3))
 
 plot(datFles$age[ds], datFles$propAccel[ds], ylim = c(0.15, 0.85), xlim = c(-80, 0), main = "Towards flight loss", col = "#3c1b4dff", cex = 1.5)
@@ -140,7 +140,7 @@ dev.off()
 
 ### See correction for sequence quality in the original script that processes genome size data.
 
-genomecomps <- read.csv("genomic_comparisons_data.csv", header = T, row.names = 1)
+genomecomps <- read.csv("../data/genomic_comparisons_data.csv", header = T, row.names = 1)
 genomecomps$age <- pasfaipair[c(T,F,F,F,F,F),"age"]
 
 genomeSimils <- grepl("VV|DD", rownames(genomecomps))
@@ -198,9 +198,7 @@ genomecomps$propAccelDn <- pasfaipair$propAccel[dn] - 0.5
 genomecomps$propAccelDnds <- pasfaipair$propAccel[dnds] - 0.5
 
 
-save(propFlesDsAccel_flight_mod, propFlesDsAccel_flight_mod, propFlesDsAccel_flight_mod, pasfaipair, exonN_flight_mod, cvalue_flight_mod, genomecomps, file = "genome_flight_age_mass_models.Rdata")
-
-save(genomecomps, file = "genome_flight_age_mass_data.Rdata")
+save(genomecomps, file = "../data/genome_flight_age_mass_data.Rdata")
 
 # SEM tests including total genome length ######## MOST REVEALING RESULTS SO FAR
 
@@ -267,7 +265,7 @@ genomecomps$shape_group <- ifelse(genomecomps$comparison %in% extremes, "Group1"
 # The following figure shows three sets of results (adding *-1 to show acceleration upon more flight): a. link between body mass and dS. b.link between N genes and dnds. c. link between N single exon genes and dn/ds. d. link between flight and molecular rates.
 
 plotlist <- list()
-pdf("Fig_3_regs_path_analysis.pdf", width = 7, height =7.5, useDingbats = F)
+pdf("../figures/Fig_3_regs_path_analysis.pdf", width = 7, height =7.5, useDingbats = F)
 plotlist[[1]] <- ggplot(genomecomps, aes(x = masdif *-1, y = propAccelDs, color = flight, group = 1, shape = shape_group)) + geom_point(size = 3) + geom_smooth(method = "lm", formula = "y~0+x") + theme_bw() + scale_color_manual(values = flightcols, name = "flight") + geom_hline(yintercept=0, linetype="dashed", size = 0.3) + geom_vline(xintercept = 0, linetype="dashed", size = 0.3) + scale_shape_manual(values = c("Group1" = 5, "Group2" = 19), guide = "none") +
   geom_text(
     data = subset(genomecomps[-24,], shape_group == "Group1"), 

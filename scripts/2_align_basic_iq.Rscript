@@ -2,7 +2,7 @@ library(phangorn)
 source("trimCols.R")
 source("trimCodons.R")
 
-tr <- read.tree("trauk.tre")
+tr <- read.tree("../data/trauk.tre")
 
 loci <- dir("exon_als_cut_auk")
 nakedloci <- gsub("[.]fa", "", loci)
@@ -19,9 +19,9 @@ for(i in 1:length(loci)){
 	
 	# Align using MACSE
 	
-	system(paste0("java -jar ~/Desktop/Software/macse_v2.03.jar -prog alignSequences -max_refine_iter 0 -seq exon_als_cut_auk/", loci[i], " -out_NT basic_alignments/", nakedloci[i], "_macse_NT.fasta -out_AA basic_alignments/", nakedloci[i], "_macse_AA.fasta"))
+	system(paste0("java -jar macse_v2.03.jar -prog alignSequences -max_refine_iter 0 -seq exon_als_cut_auk/", loci[i], " -out_NT basic_alignments/", nakedloci[i], "_macse_NT.fasta -out_AA basic_alignments/", nakedloci[i], "_macse_AA.fasta"))
 	if(!file.exists(paste0("basic_alignments/", nakedloci[i], "_macse_NT.fasta"))) next
-	system(paste0("java -jar ~/Desktop/Software/macse_v2.03.jar -prog exportAlignment -align basic_alignments/", nakedloci[i], "_macse_NT.fasta -codonForInternalStop NNN -codonForFinalStop --- -codonForInternalFS --- -charForRemainingFS - -out_NT basic_alignments/", nakedloci[i], "_macse_NT.fasta -out_AA basic_alignments/", nakedloci[i], "_macse_AA.fasta"))
+	system(paste0("java -jar macse_v2.03.jar -prog exportAlignment -align basic_alignments/", nakedloci[i], "_macse_NT.fasta -codonForInternalStop NNN -codonForFinalStop --- -codonForInternalFS --- -charForRemainingFS - -out_NT basic_alignments/", nakedloci[i], "_macse_NT.fasta -out_AA basic_alignments/", nakedloci[i], "_macse_AA.fasta"))
 	dat <- read.dna(paste0("basic_alignments/", nakedloci[i], "_macse_NT.fasta"), format = "fasta")
 	metdat <- dim(dat)
 	
@@ -51,7 +51,7 @@ for(i in 1:length(loci)){
 	
 	# Infer IQTREE branch lengths forcing the topology.
 	
-      	system(paste0("~/Desktop/Software/iqtree-1.7-beta9-MacOSX/bin/iqtree -st DNA -m GTR+I+R -s ", nakedloci[i], "_macse_NT.fasta -fast -redo -te ", nakedloci[i], ".temptr.tre"))
+      	system(paste0("iqtree -st DNA -m GTR+I+R -s ", nakedloci[i], "_macse_NT.fasta -fast -redo -te ", nakedloci[i], ".temptr.tre"))
 	system(paste0("rm *log *gz *AA.fasta *iqtree ", nakedloci[i], ".temptr.tre"))
 	colnames(locdat) <- c("nam", "ntaxpre", "ntaxpost", "ncolpre", "ncolpost")
 	write.csv(locdat, file = "../basicAlDat.csv")

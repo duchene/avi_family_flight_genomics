@@ -1,11 +1,11 @@
 library(phangorn)
 library(ggplot2)
 
-load("dnds_sisdifs_vol.Rdata")
+load("../data/dnds_sisdifs_vol.Rdata")
 trnames <- gsub("_dS[.]tre", "", grep("dS", dir("dnds_analyses"), value = T))
 
 ##################################
-# Tests of acceleration in flightless sisters - PERHAPS SECOND KEY FIGURE(S)
+# Tests of acceleration in flightless sisters
 # "similars" mean VV and DD categories, differents are all others. SMs are SM pairs, and FL are those that are not VV, DD, or SM (e.g., FV, FD, etc.)
 
 
@@ -154,7 +154,7 @@ save(pvalsperloc, file = "p_values_per_locus.Rdata")
 
 # Plot cumulative densities of interest - each of ds, dn, and dnds, and in each all of fless, similar, and sm.
 
-pdf("Fig_1_pvalCummDens.pdf", height = 6, width = 8)
+pdf("../figures/Fig_1_pvalCummDens.pdf", height = 6, width = 8)
 par(mfrow = c(2, 3))
 for(i in c(8, 16, 24)){
 	plot(ecdf(pvalsperloc[,i]), col = "#3c1b4dff", main = colnames(pvalsperloc)[i])
@@ -239,7 +239,7 @@ vs <- sapply(seq(1, nrow(pasfaiflfls), 2), function(x){
 })
 pasfaiflfls$cramersV <- as.vector(sapply(vs, function(x) c(round(x, 2), NA)))
 
-pdf("dnds_stackedSimple.pdf", height = 5, width = 10, useDingbats = F)
+pdf("../figures/dnds_stackedSimple.pdf", height = 5, width = 10, useDingbats = F)
 ggplot(pasfaiflfls, aes(fill=geneTrend, y=N, x=moldat)) + geom_bar(position="fill", stat="identity") + geom_abline(slope = 0, intercept = 0.5,  col = "black", lty=2) + facet_grid(~flight) + geom_text(aes(y=rep(c(0.65, 0.4), 12), label=N), vjust=1.6, color="black", size=3.5) + geom_text(aes(y=0.95, label = cramersV), color="black", size=3.5)
 dev.off()
 

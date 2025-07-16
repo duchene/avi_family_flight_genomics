@@ -2,10 +2,10 @@ library(phangorn)
 library(ggplot2)
 library(reshape2)
 
-gots <- read.csv("~/Desktop/Research/auk/goterms.csv", header = T, row.names = 1)
+gots <- read.csv("../data/goterms.csv", header = T, row.names = 1)
 rownames(gots) <- gots$ID
 
-load("dnds_branches.Rdata")
+load("../data/dnds_branches.Rdata")
 
 trnames <- gsub("_dS[.]tre", "", grep("dS", dir("dnds_analyses"), value = T))
 

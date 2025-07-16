@@ -6,8 +6,90 @@ trnames <- gsub("_dS[.]tre", "", grep("dS", dir("dnds_analyses"), value = T))
 
 dnres <- dsres <- olres <- matrix(NA, length(trnames), 84)
 rownames(dnres) <- rownames(dsres) <- rownames(olres) <- trnames
-taxa <- c("Rhea_pennata", "Tinamus_guttatus", "Chauna_torquata", "Anas_platyrhynchos", "Gallus_gallus", "Coturnix_japonica", "Meleagris_gallopavo", "Tympanuchus_cupido", "Podilymbus_podiceps", "Podiceps_cristatus", "Mesitornis_unicolor", "Pterocles_gutturalis", "Columba_livia", "Patagioenas_fasciata", "Tauraco_erythrolophus", "Corythaixoides_concolor", "Lophotis_ruficrista", "Chlamydotis_macqueenii", "Geococcyx_californianus", "Crotophaga_sulcirostris", "Ceuthmochares_aereus", "Cuculus_canorus", "Antrostomus_carolinensis", "Chordeiles_acutipennis", "Hemiprocne_comata", "Chaetura_pelagica", "Oreotrochilus_melanogaster", "Calypte_anna", "Rhynochetos_jubatus", "Phaethon_lepturus", "Aptenodytes_forsteri", "Pelecanoides_urinatrix", "Mesembrinibis_cayennensis", "Nipponia_nippon", "Cochlearius_cochlearius", "Egretta_garzetta", "Scopus_umbretta", "Pelecanus_crispus", "Phalacrocorax_harrisi", "Phalacrocorax_carbo", "Atlantisia_rogersi", "Heliornis_fulica", "Psophia_crepitans", "Balearica_regulorum", "Charadrius_vociferus", "Charadrius_alexandrinus", "Alca_torda", "Aquila_chrysaetos", "Haliaeetus_albicilla", "Colius_striatus", "Urocolius_indicus", "Strix_occidentalis", "Tyto_alba", "Trogon_melanurus", "Apaloderma_vittatum", "Bucorvus_abyssinicus", "Buceros_rhinoceros", "Eurystomus_gularis", "Merops_nubicus", "Picoides_pubescens", "Indicator_maculatus", "Cariama_cristata", "Chunga_burmeisteri", "Herpetotheres_cachinnans", "Falco_peregrinus", "Nestor_notabilis", "Melopsittacus_undulatus", "Scytalopus_superciliaris", "Campylorhamphus_procurvoides", "Manacus_manacus", "Lepidothrix_coronata", "Menura_novaehollandiae", "Atrichornis_clamosus", "Orthonyx_spaldingii", "Pomatostomus_ruficeps", "Aphelocoma_coerulescens", "Corvus_brachyrhynchos", "Panurus_biarmicus", "Alaudala_cheleensis", "Taeniopygia_guttata", "Lonchura_striata", "Geospiza_fortis", "Nesospiza_acunhae")
-tax <- read.csv("~/Desktop/B10K_phase2/taxonomy_codes.csv", header = T, row.names = 1)
+taxa <- c("Rhea_pennata",
+"Tinamus_guttatus",
+"Chauna_torquata",
+"Anas_platyrhynchos",
+"Gallus_gallus",
+"Coturnix_japonica",
+"Meleagris_gallopavo",
+"Tympanuchus_cupido",
+"Podilymbus_podiceps",
+"Podiceps_cristatus",
+"Mesitornis_unicolor",
+"Pterocles_gutturalis",
+"Columba_livia",
+"Patagioenas_fasciata",
+"Tauraco_erythrolophus",
+"Corythaixoides_concolor",
+"Lophotis_ruficrista",
+"Chlamydotis_macqueenii",
+"Geococcyx_californianus",
+"Crotophaga_sulcirostris",
+"Ceuthmochares_aereus",
+"Cuculus_canorus",
+"Antrostomus_carolinensis",
+"Chordeiles_acutipennis",
+"Hemiprocne_comata",
+"Chaetura_pelagica",
+"Oreotrochilus_melanogaster",
+"Calypte_anna",
+"Rhynochetos_jubatus",
+"Phaethon_lepturus",
+"Aptenodytes_forsteri",
+"Pelecanoides_urinatrix",
+"Mesembrinibis_cayennensis",
+"Nipponia_nippon",
+"Cochlearius_cochlearius",
+"Egretta_garzetta",
+"Scopus_umbretta",
+"Pelecanus_crispus",
+"Phalacrocorax_harrisi",
+"Phalacrocorax_carbo",
+"Atlantisia_rogersi",
+"Heliornis_fulica",
+"Psophia_crepitans",
+"Balearica_regulorum",
+"Charadrius_vociferus",
+"Charadrius_alexandrinus",
+"Alca_torda",
+"Aquila_chrysaetos",
+"Haliaeetus_albicilla",
+"Colius_striatus",
+"Urocolius_indicus",
+"Strix_occidentalis",
+"Tyto_alba",
+"Trogon_melanurus",
+"Apaloderma_vittatum",
+"Bucorvus_abyssinicus",
+"Buceros_rhinoceros",
+"Eurystomus_gularis",
+"Merops_nubicus",
+"Picoides_pubescens",
+"Indicator_maculatus",
+"Cariama_cristata",
+"Chunga_burmeisteri",
+"Herpetotheres_cachinnans",
+"Falco_peregrinus",
+"Nestor_notabilis",
+"Melopsittacus_undulatus",
+"Scytalopus_superciliaris",
+"Campylorhamphus_procurvoides",
+"Manacus_manacus",
+"Lepidothrix_coronata",
+"Menura_novaehollandiae",
+"Atrichornis_clamosus",
+"Orthonyx_spaldingii",
+"Pomatostomus_ruficeps",
+"Aphelocoma_coerulescens",
+"Corvus_brachyrhynchos",
+"Panurus_biarmicus",
+"Alaudala_cheleensis",
+"Taeniopygia_guttata",
+"Lonchura_striata",
+"Geospiza_fortis",
+"Nesospiza_acunhae")
+tax <- read.csv("../data/taxonomy_codes.csv", header = T, row.names = 1)
 tax <- tax[taxa,]
 colnames(dnres) <- colnames(dsres) <- colnames(olres) <- c(tax$code[1:46], "PINIMP", tax$code[47:83])
 
@@ -39,7 +121,7 @@ dsres[dsres < 0.0001 | dsres > 2] <- NA
 dndsres[dndsres < 0.001 | dndsres > 5] <- NA
 olres[olres < 0.0001 | olres > 2] <- NA
 
-save(dnres, dsres, dndsres, olres, file = "dnds_branches.Rdata")
+save(dnres, dsres, dndsres, olres, file = "../data/dnds_branches.Rdata")
 
 # Create matrix where columns are the ratio among taxa by flight habit (less / more flight intensive). See exact order defined at the start of this file
 
@@ -77,5 +159,5 @@ sisdifggds$comparison <- factor(sisdifggds$comparison, levels = names(by(sisdifg
 sisdifggdnds$comparison <- factor(sisdifggdnds$comparison, levels = names(by(sisdifggdnds$moldiff, sisdifggdnds$comparison, median, na.rm = T))[order(by(sisdifggdnds$moldiff, sisdifggdnds$comparison, median, na.rm = T), decreasing = T)])
 sisdifggol$comparison <- factor(sisdifggol$comparison, levels = names(by(sisdifggol$moldiff, sisdifggol$comparison, median, na.rm = T))[order(by(sisdifggol$moldiff, sisdifggol$comparison, median, na.rm = T), decreasing = T)])
 
-save(sisdifggdn, sisdifggds, sisdifggdnds, sisdifggol, file = "dnds_sisdifs_vol.Rdata")
+save(sisdifggdn, sisdifggds, sisdifggdnds, sisdifggol, file = "../data/dnds_sisdifs_vol.Rdata")
 
