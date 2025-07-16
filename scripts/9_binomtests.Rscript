@@ -1,0 +1,248 @@
+library(phangorn)
+library(ggplot2)
+
+load("dnds_sisdifs_vol.Rdata")
+trnames <- gsub("_dS[.]tre", "", grep("dS", dir("dnds_analyses"), value = T))
+
+##################################
+# Tests of acceleration in flightless sisters - PERHAPS SECOND KEY FIGURE(S)
+# "similars" mean VV and DD categories, differents are all others. SMs are SM pairs, and FL are those that are not VV, DD, or SM (e.g., FV, FD, etc.)
+
+
+# Test dS data
+
+dslocbinaccel <- sapply(trnames, function(x){
+	resSimilar <- vector()
+	if(all(is.na(sisdifggds[which(sisdifggds[,1] == x & sisdifggds$comptype %in% c("VV", "DD")),3]))){
+		resSimilar <- c(NA, NA)
+	} else if(sum(!is.na(sisdifggds[which(sisdifggds[,1] == x & sisdifggds$comptype %in% c("VV", "DD")),3])) < 9){
+		resSimilar <- c(NA, NA)
+	} else {
+		resSimilar[1] <- binom.test(length(which(sisdifggds[which(sisdifggds[,1] == x & sisdifggds$comptype %in% c("VV", "DD")),3] > 1)), sum(!is.na(sisdifggds[which(sisdifggds[,1] == x & sisdifggds$comptype %in% c("VV", "DD")),3])), alternative = "greater")$p.value
+		resSimilar[2] <- binom.test(length(which(sisdifggds[which(sisdifggds[,1] == x & sisdifggds$comptype %in% c("VV", "DD")),3] > 1)), sum(!is.na(sisdifggds[which(sisdifggds[,1] == x & sisdifggds$comptype %in% c("VV", "DD")),3])), alternative = "less")$p.value
+	}
+	resDiff <- vector()
+        if(all(is.na(sisdifggds[which(sisdifggds[,1] == x & !sisdifggds$comptype %in% c("VV", "DD")),3]))){
+                resDiff <- c(NA, NA)
+        } else if(sum(!is.na(sisdifggds[which(sisdifggds[,1] == x & !sisdifggds$comptype %in% c("VV", "DD")),3])) < 9){
+                resDiff <- c(NA, NA)
+        } else {
+                resDiff[1] <- binom.test(length(which(sisdifggds[which(sisdifggds[,1] == x & !sisdifggds$comptype %in% c("VV", "DD")),3] > 1)), sum(!is.na(sisdifggds[which(sisdifggds[,1] == x & !sisdifggds$comptype %in% c("VV", "DD")),3])), alternative = "greater")$p.value
+                resDiff[2] <- binom.test(length(which(sisdifggds[which(sisdifggds[,1] == x & !sisdifggds$comptype %in% c("VV", "DD")),3] > 1)), sum(!is.na(sisdifggds[which(sisdifggds[,1] == x & !sisdifggds$comptype %in% c("VV", "DD")),3])), alternative = "less")$p.value
+        }
+        
+        resSM <- vector()
+        if(all(is.na(sisdifggds[which(sisdifggds[,1] == x & sisdifggds$comptype %in% c("SM")),3]))){
+                resSM <- c(NA, NA)
+        } else if(sum(!is.na(sisdifggds[which(sisdifggds[,1] == x & sisdifggds$comptype %in% c("SM")),3])) < 9){
+                resSM <- c(NA, NA)
+        } else {
+                resSM[1] <- binom.test(length(which(sisdifggds[which(sisdifggds[,1] == x & sisdifggds$comptype %in% c("SM")),3] > 1)), sum(!is.na(sisdifggds[which(sisdifggds[,1] == x & sisdifggds$comptype %in% c("SM")),3])), alternative = "greater")$p.value
+                resSM[2] <- binom.test(length(which(sisdifggds[which(sisdifggds[,1] == x & sisdifggds$comptype %in% c("SM")),3] > 1)), sum(!is.na(sisdifggds[which(sisdifggds[,1] == x & sisdifggds$comptype %in% c("SM")),3])), alternative = "less")$p.value
+        }
+        
+        resFL <- vector()
+        if(all(is.na(sisdifggds[which(sisdifggds[,1] == x & !sisdifggds$comptype %in% c("VV", "DD", "SM")),3]))){
+                resFL <- c(NA, NA)
+        } else if(sum(!is.na(sisdifggds[which(sisdifggds[,1] == x & !sisdifggds$comptype %in% c("VV", "DD", "SM")),3])) < 9){
+                resFL <- c(NA, NA)
+        } else {
+                resFL[1] <- binom.test(length(which(sisdifggds[which(sisdifggds[,1] == x & !sisdifggds$comptype %in% c("VV", "DD", "SM")),3] > 1)), sum(!is.na(sisdifggds[which(sisdifggds[,1] == x & !sisdifggds$comptype %in% c("VV", "DD", "SM")),3])), alternative = "greater")$p.value
+                resFL[2] <- binom.test(length(which(sisdifggds[which(sisdifggds[,1] == x & !sisdifggds$comptype %in% c("VV", "DD", "SM")),3] > 1)), sum(!is.na(sisdifggds[which(sisdifggds[,1] == x & !sisdifggds$comptype %in% c("VV", "DD", "SM")),3])), alternative = "less")$p.value
+        }
+        
+	return(c(resSimilar, resDiff, resSM, resFL))
+})
+
+
+# Test dN data
+
+dnlocbinaccel <- sapply(trnames, function(x){
+	resSimilar <- vector()
+	if(all(is.na(sisdifggdn[which(sisdifggdn[,1] == x & sisdifggdn$comptype %in% c("VV", "DD")),3]))){
+		resSimilar <- c(NA, NA)
+	} else if(sum(!is.na(sisdifggdn[which(sisdifggdn[,1] == x & sisdifggdn$comptype %in% c("VV", "DD")),3])) < 9){
+		resSimilar <- c(NA, NA)
+	} else {
+		resSimilar[1] <- binom.test(length(which(sisdifggdn[which(sisdifggdn[,1] == x & sisdifggdn$comptype %in% c("VV", "DD")),3] > 1)), sum(!is.na(sisdifggdn[which(sisdifggdn[,1] == x & sisdifggdn$comptype %in% c("VV", "DD")),3])), alternative = "greater")$p.value
+		resSimilar[2] <- binom.test(length(which(sisdifggdn[which(sisdifggdn[,1] == x & sisdifggdn$comptype %in% c("VV", "DD")),3] > 1)), sum(!is.na(sisdifggdn[which(sisdifggdn[,1] == x & sisdifggdn$comptype %in% c("VV", "DD")),3])), alternative = "less")$p.value
+	}
+	resDiff <- vector()
+        if(all(is.na(sisdifggdn[which(sisdifggdn[,1] == x & !sisdifggdn$comptype %in% c("VV", "DD")),3]))){
+                resDiff <- c(NA, NA)
+        } else if(sum(!is.na(sisdifggdn[which(sisdifggdn[,1] == x & !sisdifggdn$comptype %in% c("VV", "DD")),3])) < 9){
+                resDiff <- c(NA, NA)
+        } else {
+                resDiff[1] <- binom.test(length(which(sisdifggdn[which(sisdifggdn[,1] == x & !sisdifggdn$comptype %in% c("VV", "DD")),3] > 1)), sum(!is.na(sisdifggdn[which(sisdifggdn[,1] == x & !sisdifggdn$comptype %in% c("VV", "DD")),3])), alternative = "greater")$p.value
+                resDiff[2] <- binom.test(length(which(sisdifggdn[which(sisdifggdn[,1] == x & !sisdifggdn$comptype %in% c("VV", "DD")),3] > 1)), sum(!is.na(sisdifggdn[which(sisdifggdn[,1] == x & !sisdifggdn$comptype %in% c("VV", "DD")),3])), alternative = "less")$p.value
+        }
+	resSM <- vector()
+        if(all(is.na(sisdifggdn[which(sisdifggdn[,1] == x & sisdifggdn$comptype %in% c("SM")),3]))){
+                resSM <- c(NA, NA)
+        } else if(sum(!is.na(sisdifggdn[which(sisdifggdn[,1] == x & sisdifggdn$comptype %in% c("SM")),3])) < 9){
+                resSM <- c(NA, NA)
+        } else {
+                resSM[1] <- binom.test(length(which(sisdifggdn[which(sisdifggdn[,1] == x & sisdifggdn$comptype %in% c("SM")),3] > 1)), sum(!is.na(sisdifggdn[which(sisdifggdn[,1] == x & sisdifggdn$comptype %in% c("SM")),3])), alternative = "greater")$p.value
+                resSM[2] <- binom.test(length(which(sisdifggdn[which(sisdifggdn[,1] == x & sisdifggdn$comptype %in% c("SM")),3] > 1)), sum(!is.na(sisdifggdn[which(sisdifggdn[,1] == x & sisdifggdn$comptype %in% c("SM")),3])), alternative = "less")$p.value
+        }
+        
+        resFL <- vector()
+        if(all(is.na(sisdifggdn[which(sisdifggdn[,1] == x & !sisdifggdn$comptype %in% c("VV", "DD", "SM")),3]))){
+                resFL <- c(NA, NA)
+        } else if(sum(!is.na(sisdifggdn[which(sisdifggdn[,1] == x & !sisdifggdn$comptype %in% c("VV", "DD", "SM")),3])) < 9){
+                resFL <- c(NA, NA)
+        } else {
+                resFL[1] <- binom.test(length(which(sisdifggdn[which(sisdifggdn[,1] == x & !sisdifggdn$comptype %in% c("VV", "DD", "SM")),3] > 1)), sum(!is.na(sisdifggdn[which(sisdifggdn[,1] == x & !sisdifggdn$comptype %in% c("VV", "DD", "SM")),3])), alternative = "greater")$p.value
+                resFL[2] <- binom.test(length(which(sisdifggdn[which(sisdifggdn[,1] == x & !sisdifggdn$comptype %in% c("VV", "DD", "SM")),3] > 1)), sum(!is.na(sisdifggdn[which(sisdifggdn[,1] == x & !sisdifggdn$comptype %in% c("VV", "DD", "SM")),3])), alternative = "less")$p.value
+        }
+        
+	return(c(resSimilar, resDiff, resSM, resFL))
+})
+
+
+# Test dN/dS data
+
+dndslocbinaccel <- sapply(trnames, function(x){
+	resSimilar <- vector()
+	if(all(is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & sisdifggdnds$comptype %in% c("VV", "DD")),3]))){
+		resSimilar <- c(NA, NA)
+	} else if(sum(!is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & sisdifggdnds$comptype %in% c("VV", "DD")),3])) < 9){
+		resSimilar <- c(NA, NA)
+	} else {
+		resSimilar[1] <- binom.test(length(which(sisdifggdnds[which(sisdifggdnds[,1] == x & sisdifggdnds$comptype %in% c("VV", "DD")),3] > 1)), sum(!is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & sisdifggdnds$comptype %in% c("VV", "DD")),3])), alternative = "greater")$p.value
+		resSimilar[2] <- binom.test(length(which(sisdifggdnds[which(sisdifggdnds[,1] == x & sisdifggdnds$comptype %in% c("VV", "DD")),3] > 1)), sum(!is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & sisdifggdnds$comptype %in% c("VV", "DD")),3])), alternative = "less")$p.value
+	}
+	resDiff <- vector()
+        if(all(is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & !sisdifggdnds$comptype %in% c("VV", "DD")),3]))){
+                resDiff <- c(NA, NA)
+        } else if(sum(!is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & !sisdifggdnds$comptype %in% c("VV", "DD")),3])) < 9){
+                resDiff <- c(NA, NA)
+        } else {
+                resDiff[1] <- binom.test(length(which(sisdifggdnds[which(sisdifggdnds[,1] == x & !sisdifggdnds$comptype %in% c("VV", "DD")),3] > 1)), sum(!is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & !sisdifggdnds$comptype %in% c("VV", "DD")),3])), alternative = "greater")$p.value
+                resDiff[2] <- binom.test(length(which(sisdifggdnds[which(sisdifggdnds[,1] == x & !sisdifggdnds$comptype %in% c("VV", "DD")),3] > 1)), sum(!is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & !sisdifggdnds$comptype %in% c("VV", "DD")),3])), alternative = "less")$p.value
+        }
+	resSM <- vector()
+        if(all(is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & sisdifggdnds$comptype %in% c("SM")),3]))){
+                resSM <- c(NA, NA)
+        } else if(sum(!is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & sisdifggdnds$comptype %in% c("SM")),3])) < 9){
+                resSM <- c(NA, NA)
+        } else {
+                resSM[1] <- binom.test(length(which(sisdifggdnds[which(sisdifggdnds[,1] == x & sisdifggdnds$comptype %in% c("SM")),3] > 1)), sum(!is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & sisdifggdnds$comptype %in% c("SM")),3])), alternative = "greater")$p.value
+                resSM[2] <- binom.test(length(which(sisdifggdnds[which(sisdifggdnds[,1] == x & sisdifggdnds$comptype %in% c("SM")),3] > 1)), sum(!is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & sisdifggdnds$comptype %in% c("SM")),3])), alternative = "less")$p.value
+        }
+        
+        resFL <- vector()
+        if(all(is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & !sisdifggdnds$comptype %in% c("VV", "DD", "SM")),3]))){
+                resFL <- c(NA, NA)
+        } else if(sum(!is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & !sisdifggdnds$comptype %in% c("VV", "DD", "SM")),3])) < 9){
+                resFL <- c(NA, NA)
+        } else {
+                resFL[1] <- binom.test(length(which(sisdifggdnds[which(sisdifggdnds[,1] == x & !sisdifggdnds$comptype %in% c("VV", "DD", "SM")),3] > 1)), sum(!is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & !sisdifggdnds$comptype %in% c("VV", "DD", "SM")),3])), alternative = "greater")$p.value
+                resFL[2] <- binom.test(length(which(sisdifggdnds[which(sisdifggdnds[,1] == x & !sisdifggdnds$comptype %in% c("VV", "DD", "SM")),3] > 1)), sum(!is.na(sisdifggdnds[which(sisdifggdnds[,1] == x & !sisdifggdnds$comptype %in% c("VV", "DD", "SM")),3])), alternative = "less")$p.value
+        }
+        
+	return(c(resSimilar, resDiff, resSM, resFL))
+})
+
+
+# Collect all p-values
+
+pvalsperloc <- cbind(t(dslocbinaccel), t(dnlocbinaccel), t(dndslocbinaccel))
+colnames(pvalsperloc) <- c(paste0("ds_", c("similar_flessAccel", "similar_flessDecel", "diff_flessAccel", "diff_flessDecel", "sm_flessAccel", "sm_flessDecel", "fless_flessAccel", "fless_flessDecel")), paste0("dn_", c("similar_flessAccel", "similar_flessDecel", "diff_flessAccel", "diff_flessDecel", "sm_flessAccel", "sm_flessDecel", "fless_flessAccel", "fless_flessDecel")), paste0("dnds_", c("similar_flessAccel", "similar_flessDecel", "diff_flessAccel", "diff_flessDecel", "sm_flessAccel", "sm_flessDecel", "fless_flessAccel", "fless_flessDecel")))
+
+save(pvalsperloc, file = "p_values_per_locus.Rdata")
+
+# Plot cumulative densities of interest - each of ds, dn, and dnds, and in each all of fless, similar, and sm.
+
+pdf("Fig_1_pvalCummDens.pdf", height = 6, width = 8)
+par(mfrow = c(2, 3))
+for(i in c(8, 16, 24)){
+	plot(ecdf(pvalsperloc[,i]), col = "#3c1b4dff", main = colnames(pvalsperloc)[i])
+	lines(ecdf(pvalsperloc[,i-6]), col = "#90d743ff", do.points = TRUE)
+	lines(ecdf(pvalsperloc[,i-2]), col = "#f7e913ff", do.points = TRUE)
+	abline(0, 1)
+	legend("topleft", col = c("#3c1b4dff", "#90d743ff", "#f7e913ff"), pch = 19, legend = c(
+	paste0("KS D = ", round(ks.test(pvalsperloc[,i], "punif", 0, 1, alternative="greater")$statistic, 2)),
+	paste0("KS D = ", round(ks.test(pvalsperloc[,i-6], "punif", 0, 1, alternative="greater")$statistic, 2)),
+	paste0("KS D = ", round(ks.test(pvalsperloc[,i-2], "punif", 0, 1, alternative="greater")$statistic, 2))
+	))
+}
+for(i in c(7, 15, 23)){
+	plot(ecdf(pvalsperloc[,i]), col = "#3c1b4dff", main = colnames(pvalsperloc)[i])
+	lines(ecdf(pvalsperloc[,i-6]), col = "#90d743ff", do.points = TRUE)
+	lines(ecdf(pvalsperloc[,i-2]), col = "#f7e913ff", do.points = TRUE)
+	abline(0, 1)
+	legend("topleft", col = c("#3c1b4dff", "#90d743ff", "#f7e913ff"), pch = 19, legend = c(
+	paste0("KS D = ", round(ks.test(pvalsperloc[,i], "punif", 0, 1, alternative="greater")$statistic, 2)),
+	paste0("KS D = ", round(ks.test(pvalsperloc[,i-6], "punif", 0, 1, alternative="greater")$statistic, 2)),
+	paste0("KS D = ", round(ks.test(pvalsperloc[,i-2], "punif", 0, 1, alternative="greater")$statistic, 2))
+	))
+}
+dev.off()
+
+
+# Stacked barplot of proportions of successes and failures (accelerations versus decelerations in flightless birds)
+
+Cramers_V <- function(chi, n, df) sqrt((chi)/(n * df))
+
+# Only flying pairs
+
+Ndsaccelsimils <- length(which(sisdifggds$comptype %in% c("VV", "DD") & sisdifggds$moldiff > 1))
+Ndsdecelsimils <- length(which(sisdifggds$comptype %in% c("VV", "DD") & sisdifggds$moldiff < 1))
+Ndnaccelsimils <- length(which(sisdifggdn$comptype %in% c("VV", "DD") & sisdifggdn$moldiff > 1))
+Ndndecelsimils <- length(which(sisdifggdn$comptype %in% c("VV", "DD") & sisdifggdn$moldiff < 1))
+Ndndsaccelsimils <- length(which(sisdifggdnds$comptype %in% c("VV", "DD") & sisdifggdnds$moldiff > 1))
+Ndndsdecelsimils <- length(which(sisdifggdnds$comptype %in% c("VV", "DD") & sisdifggdnds$moldiff < 1))
+pasfaiflng <- data.frame(moldat = factor(c("ds", "ds", "dn", "dn", "dnds", "dnds"), levels = c("ds", "dn", "dnds")), geneTrend = rep(c("flessAccel", "flessDecel"), 3), N = c(Ndsaccelsimils, Ndsdecelsimils, Ndnaccelsimils, Ndndecelsimils, Ndndsaccelsimils, Ndndsdecelsimils))
+ggplot(pasfaiflng, aes(fill=geneTrend, y=N, x=moldat)) + geom_bar(position="fill", stat="identity")
+
+
+# Only flightless pairs
+
+Ndsacceldiffs <- length(which(!sisdifggds$comptype %in% c("VV", "DD") & sisdifggds$moldiff > 1))
+Ndsdeceldiffs <- length(which(!sisdifggds$comptype %in% c("VV", "DD") & sisdifggds$moldiff < 1))
+Ndnacceldiffs <- length(which(!sisdifggdn$comptype %in% c("VV", "DD") & sisdifggdn$moldiff > 1))
+Ndndeceldiffs <- length(which(!sisdifggdn$comptype %in% c("VV", "DD") & sisdifggdn$moldiff < 1))
+Ndndsacceldiffs <- length(which(!sisdifggdnds$comptype %in% c("VV", "DD") & sisdifggdnds$moldiff > 1))
+Ndndsdeceldiffs <- length(which(!sisdifggdnds$comptype %in% c("VV", "DD") & sisdifggdnds$moldiff < 1))
+pasfaifl <- data.frame(moldat = factor(c("ds", "ds", "dn", "dn", "dnds", "dnds"), levels = c("ds", "dn", "dnds")), geneTrend = rep(c("flessAccel", "flessDecel"), 3), N = c(Ndsacceldiffs, Ndsdeceldiffs, Ndnacceldiffs, Ndndeceldiffs, Ndndsacceldiffs, Ndndsdeceldiffs))
+ggplot(pasfaifl, aes(fill=geneTrend, y=N, x=moldat)) + geom_bar(position="fill", stat="identity")
+
+# Only SM pairs
+
+NdsaccelSMs <- length(which(sisdifggds$comptype %in% c("SM") & sisdifggds$moldiff > 1))
+NdsdecelSMs <- length(which(sisdifggds$comptype %in% c("SM") & sisdifggds$moldiff < 1))
+NdnaccelSMs <- length(which(sisdifggdn$comptype %in% c("SM") & sisdifggdn$moldiff > 1))
+NdndecelSMs <- length(which(sisdifggdn$comptype %in% c("SM") & sisdifggdn$moldiff < 1))
+NdndsaccelSMs <- length(which(sisdifggdnds$comptype %in% c("SM") & sisdifggdnds$moldiff > 1))
+NdndsdecelSMs <- length(which(sisdifggdnds$comptype %in% c("SM") & sisdifggdnds$moldiff < 1))
+pasfaism <- data.frame(moldat = factor(c("ds", "ds", "dn", "dn", "dnds", "dnds"), levels = c("ds", "dn", "dnds")), geneTrend = rep(c("flessAccel", "flessDecel"), 3), N = c(NdsaccelSMs, NdsdecelSMs, NdnaccelSMs, NdndecelSMs, NdndsaccelSMs, NdndsdecelSMs))
+
+
+# Non similar or SM pairs
+
+NdsaccelFLs <- length(which(!sisdifggds$comptype %in% c("VV", "DD", "SM") & sisdifggds$moldiff > 1))
+NdsdecelFLs <- length(which(!sisdifggds$comptype %in% c("VV", "DD", "SM") & sisdifggds$moldiff < 1))
+NdnaccelFLs <- length(which(!sisdifggdn$comptype %in% c("VV", "DD", "SM") & sisdifggdn$moldiff > 1))
+NdndecelFLs <- length(which(!sisdifggdn$comptype %in% c("VV", "DD", "SM") & sisdifggdn$moldiff < 1))
+NdndsaccelFLs <- length(which(!sisdifggdnds$comptype %in% c("VV", "DD", "SM") & sisdifggdnds$moldiff > 1))
+NdndsdecelFLs <- length(which(!sisdifggdnds$comptype %in% c("VV", "DD", "SM") & sisdifggdnds$moldiff < 1))
+pasfaifless <- data.frame(moldat = factor(c("ds", "ds", "dn", "dn", "dnds", "dnds"), levels = c("ds", "dn", "dnds")), geneTrend = rep(c("flessAccel", "flessDecel"), 3), N = c(NdsaccelFLs, NdsdecelFLs, NdnaccelFLs, NdndecelFLs, NdndsaccelFLs, NdndsdecelFLs))
+
+pasfaiflfls <- rbind(pasfaiflng, pasfaifl, pasfaism, pasfaifless)
+pasfaiflfls$flight <- c(rep("smallDiff", nrow(pasfaiflng)), rep("largeDiff", nrow(pasfaifl)), rep("SM", nrow(pasfaifl)), rep("fless", nrow(pasfaifl)))
+vs <- sapply(seq(1, nrow(pasfaiflfls), 2), function(x){
+	mat <- matrix(c(pasfaiflfls$N[x], pasfaiflfls$N[x]+pasfaiflfls$N[x+1], pasfaiflfls$N[x+1], pasfaiflfls$N[x]+pasfaiflfls$N[x+1]), 2, 2)
+	chsq <- chisq.test(mat)
+	v <- Cramers_V(chsq$statistic, sum(mat), chsq$parameter)
+	return(v)
+})
+pasfaiflfls$cramersV <- as.vector(sapply(vs, function(x) c(round(x, 2), NA)))
+
+pdf("dnds_stackedSimple.pdf", height = 5, width = 10, useDingbats = F)
+ggplot(pasfaiflfls, aes(fill=geneTrend, y=N, x=moldat)) + geom_bar(position="fill", stat="identity") + geom_abline(slope = 0, intercept = 0.5,  col = "black", lty=2) + facet_grid(~flight) + geom_text(aes(y=rep(c(0.65, 0.4), 12), label=N), vjust=1.6, color="black", size=3.5) + geom_text(aes(y=0.95, label = cramersV), color="black", size=3.5)
+dev.off()
+
+
+
+

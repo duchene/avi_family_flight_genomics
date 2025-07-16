@@ -1,0 +1,299 @@
+library(phangorn)
+load("dnds_sisdifs_vol.Rdata")
+
+tr <- read.tree("dated.auk.tre")
+
+Cramers_V <- function(chi, n, df) sqrt((chi)/(n * df))
+
+tax <- read.csv("taxon_comparisons_fless_flying.csv", header = T, row.names = 1)
+codes <- read.csv("taxonomy_codes.csv", header = T, row.names = 1)
+rownames(codes) <- codes$code
+tax$trname <- codes[rownames(tax), "taxa"]
+tax$trname[which(is.na(tax$trname))] <- "Pinguinus_impennis"
+
+tax$age <- unlist(sapply(tax$trname, function(x) tr$edge.length[which(tr$edge[,2] == which(tr$tip.label == x))]))
+tax$age <- as.numeric(sapply(seq(1, 84, 2), function(x) rep(c(tax$age[x], tax$age[x+1])[which(c(tax$age[x], tax$age[x+1]) == min(c(tax$age[x], tax$age[x+1])))[1]], 2)))
+
+sisdifggds$sisntype <- paste0(sisdifggds$comparison, "_", sisdifggds$comptype)
+sisdifggdn$sisntype <- paste0(sisdifggdn$comparison, "_", sisdifggdn$comptype)
+sisdifggdnds$sisntype <- paste0(sisdifggdnds$comparison, "_", sisdifggdnds$comptype)
+
+sisntype <- rep(unique(sisdifggds$sisntype), each = 6)
+pasfaipair <- data.frame(comparison = sisntype, moldat = factor(rep(c("ds", "ds", "dn", "dn", "dnds", "dnds"), length(unique(sisdifggds$sisntype))), levels = c("ds", "dn", "dnds")), geneTrend = rep(c("flessAccel", "flessDecel"), 3*length(unique(sisdifggds$sisntype))), N = NA)
+N <- vector()
+for(i in unique(sisdifggds$sisntype)){
+	N[length(N) + 1] <- length(which(sisdifggds[which(sisdifggds$sisntype %in% i),]$moldif > 1))
+        N[length(N) + 1] <- length(which(sisdifggds[which(sisdifggds$sisntype %in% i),]$moldif < 1))
+        N[length(N) + 1] <- length(which(sisdifggdn[which(sisdifggdn$sisntype %in% i),]$moldif > 1))
+        N[length(N) + 1] <- length(which(sisdifggdn[which(sisdifggdn$sisntype %in% i),]$moldif < 1))
+        N[length(N) + 1] <- length(which(sisdifggdnds[which(sisdifggdnds$sisntype %in% i),]$moldif > 1))
+        N[length(N) + 1] <- length(which(sisdifggdnds[which(sisdifggdnds$sisntype %in% i),]$moldif < 1))
+}
+pasfaipair$N <- N
+pasfaipair$comparison <- factor(as.character(pasfaipair$comparison), levels = unique(as.character(pasfaipair$comparison))[order(pasfaipair$N[c(T,F,F,F,F,F)] / pasfaipair$N[c(F,T,F,F,F,F)], decreasing = F)])
+vs <- sapply(seq(1, nrow(pasfaipair), 2), function(x){
+	mat <- matrix(c(pasfaipair$N[x], pasfaipair$N[x]+pasfaipair$N[x+1], pasfaipair$N[x+1], pasfaipair$N[x]+pasfaipair$N[x+1]), 2, 2)
+	chsq <- chisq.test(mat)
+	v <- Cramers_V(chsq$statistic, sum(mat), chsq$parameter)
+	return(v)
+})
+pasfaipair$cramersV <- as.vector(sapply(vs, function(x) c(round(x, 2), NA)))
+
+# The following evaluates the proportion of genes that are accelerated in the flightless sister - so a greater value indicates greater acceleration in flightless birds.
+
+pasfaipair$propAccel <- as.vector(sapply(seq(1, nrow(pasfaipair), 2), function(x) c(pasfaipair$N[x+1] / (pasfaipair$N[x] + pasfaipair$N[x+1]), NA)))
+
+pasfaipair$age <- as.vector(sapply(tax$age[c(T, F)], function(x) c(x, NA, x, NA, x, NA)))*(-1)
+
+pasfaipair$comparison <- as.character(pasfaipair$comparison)
+
+## Now simple plots - HERE DIFFERENCES ARE ABSOLUTE OR FOCUSING ON BELOW 0.5 (FLYING ACCELERATED)
+
+ds <- c(T,F,F,F,F,F)
+dn <- c(F,F,T,F,F,F)
+dnds <- c(F,F,F,F,T,F)
+datSimil <- pasfaipair[grepl("VV|DD", pasfaipair$comparison),]
+datDiff <- pasfaipair[!grepl("VV|DD", pasfaipair$comparison),]
+datSM <- pasfaipair[grepl("SM", pasfaipair$comparison),]
+datFles <- pasfaipair[!grepl("SM|VV|DD", pasfaipair$comparison),]
+
+extremes <- c("GALGAL-COTJAP_DV", "CEUAER-CUCCAN_SM", "HEMCOM-CHAPEL_SM", "RHYJUB-PHALEP_DV", "SCOUMB-PELCRI_SM", "HERCAC-FALPER_SM")
+
+pdf("Fig_2_age_rate_corrs.pdf", height = 9, width = 8, useDingbats = F)
+par(mfrow = c(3, 3))
+
+plot(datFles$age[ds], datFles$propAccel[ds], ylim = c(0.15, 0.85), xlim = c(-80, 0), main = "Towards flight loss", col = "#3c1b4dff", cex = 1.5)
+points(datFles$age[ds][which(datFles$propAccel[ds] > 0.5)], datFles$propAccel[ds][which(datFles$propAccel[ds] > 0.5)], pch = 19, col = "#3c1b4dff", cex = 1.5)
+points(datFles$age[ds & (datFles$comparison %in% extremes)], datFles$propAccel[ds & (datFles$comparison %in% extremes)], pch = 5, cex = 1.5)
+text(x = datFles$age[ds & (datFles$comparison %in% extremes)], y = datFles$propAccel[ds & (datFles$comparison %in% extremes)], labels = datFles$comparison[ds & (datFles$comparison %in% extremes)])
+legend("bottomright", legend = paste0(c("cor = ", "p value = "), round(unlist(cor.test(datFles$age[ds][which(datFles$propAccel[ds] > 0.5)], datFles$propAccel[ds][which(datFles$propAccel[ds] > 0.5)])[c("estimate", "p.value")]), 3)))
+abline(h = 0.5, lty = 2)
+abline(lm(datFles$propAccel[ds][which(datFles$propAccel[ds] > 0.5)] ~ datFles$age[ds][which(datFles$propAccel[ds] > 0.5)]))
+
+plot(datSimil$age[ds], datSimil$propAccel[ds], ylim = c(0.15, 0.85), xlim = c(-80, 0), main = "Minimal", col = "#90d743ff", cex = 1.5)
+points(datSimil$age[ds][which(datSimil$propAccel[ds] > 0.5)], datSimil$propAccel[ds][which(datSimil$propAccel[ds] > 0.5)], pch = 19, col = "#90d743ff", cex = 1.5)
+points(datSimil$age[ds & (datSimil$comparison %in% extremes)], datSimil$propAccel[ds & (datSimil$comparison %in% extremes)], pch = 5, cex = 1.5)
+text(x = datSimil$age[ds & (datSimil$comparison %in% extremes)], y = datSimil$propAccel[ds & (datSimil$comparison %in% extremes)], labels = datSimil$comparison[ds & (datSimil$comparison %in% extremes)])
+legend("bottomright", legend = paste0(c("cor = ", "p value = "), round(unlist(cor.test(datSimil$age[ds][which(datSimil$propAccel[ds] > 0.5)], datSimil$propAccel[ds][which(datSimil$propAccel[ds] > 0.5)])[c("estimate", "p.value")]), 3)))
+abline(h = 0.5, lty = 2)
+abline(lm(datSimil$propAccel[ds][which(datSimil$propAccel[ds] > 0.5)] ~ datSimil$age[ds][which(datSimil$propAccel[ds] > 0.5)]))
+
+plot(datSM$age[ds], datSM$propAccel[ds], ylim = c(0.15, 0.85), xlim = c(-80, 0), main = "To migratory", col = "#f7e913ff", cex = 1.5)
+points(datSM$age[ds][which(datSM$propAccel[ds] > 0.5)], datSM$propAccel[ds][which(datSM$propAccel[ds] > 0.5)], pch = 19, col = "#f7e913ff", cex = 1.5)
+points(datSM$age[ds & (datSM$comparison %in% extremes)], datSM$propAccel[ds & (datSM$comparison %in% extremes)], pch = 5, cex = 1.5)
+text(x = datSM$age[ds & (datSM$comparison %in% extremes)], y = datSM$propAccel[ds & (datSM$comparison %in% extremes)], labels = datSM$comparison[ds & (datSM$comparison %in% extremes)])
+legend("bottomright", legend = paste0(c("cor = ", "p value = "), round(unlist(cor.test(datSM$age[ds][which(datSM$propAccel[ds] > 0.5)], datSM$propAccel[ds][which(datSM$propAccel[ds] > 0.5)])[c("estimate", "p.value")]), 3)))
+abline(h = 0.5, lty = 2)
+abline(lm(datSM$propAccel[ds][which(datSM$propAccel[ds] > 0.5)] ~ datSM$age[ds][which(datSM$propAccel[ds] > 0.5)]))
+
+
+plot(datFles$age[dn], datFles$propAccel[dn], ylim = c(0.15, 0.85), xlim = c(-80, 0), col = "#3c1b4dff", cex = 1.5)
+points(datFles$age[dn][which(datFles$propAccel[dn] > 0.5)], datFles$propAccel[dn][which(datFles$propAccel[dn] > 0.5)], pch = 19, col = "#3c1b4dff", cex = 1.5)
+points(datFles$age[dn & (datFles$comparison %in% extremes)], datFles$propAccel[dn & (datFles$comparison %in% extremes)], pch = 5, cex = 1.5)
+text(x = datFles$age[dn & (datFles$comparison %in% extremes)], y = datFles$propAccel[dn & (datFles$comparison %in% extremes)], labels = datFles$comparison[dn & (datFles$comparison %in% extremes)])
+legend("bottomright", legend = paste0(c("cor = ", "p value = "), round(unlist(cor.test(datFles$age[dn][which(datFles$propAccel[dn] > 0.5)], datFles$propAccel[dn][which(datFles$propAccel[dn] > 0.5)])[c("estimate", "p.value")]), 3)))
+abline(h = 0.5, lty = 2)
+abline(lm(datFles$propAccel[dn][which(datFles$propAccel[dn] > 0.5)] ~ datFles$age[dn][which(datFles$propAccel[dn] > 0.5)]))
+
+plot(datSimil$age[dn], datSimil$propAccel[dn], ylim = c(0.15, 0.85), xlim = c(-80, 0), col = "#90d743ff", cex = 1.5)
+points(datSimil$age[dn][which(datSimil$propAccel[dn] > 0.5)], datSimil$propAccel[dn][which(datSimil$propAccel[dn] > 0.5)], pch = 19, col = "#90d743ff", cex = 1.5)
+points(datSimil$age[dn & (datSimil$comparison %in% extremes)], datSimil$propAccel[dn & (datSimil$comparison %in% extremes)], pch = 5, cex = 1.5)
+text(x = datSimil$age[dn & (datSimil$comparison %in% extremes)], y = datSimil$propAccel[dn & (datSimil$comparison %in% extremes)], labels = datSimil$comparison[dn & (datSimil$comparison %in% extremes)])
+legend("bottomright", legend = paste0(c("cor = ", "p value = "), round(unlist(cor.test(datSimil$age[dn][which(datSimil$propAccel[dn] > 0.5)], datSimil$propAccel[dn][which(datSimil$propAccel[dn] > 0.5)])[c("estimate", "p.value")]), 3)))
+abline(h = 0.5, lty = 2)
+abline(lm(datSimil$propAccel[dn][which(datSimil$propAccel[dn] > 0.5)] ~ datSimil$age[dn][which(datSimil$propAccel[dn] > 0.5)]))
+
+plot(datSM$age[dn], datSM$propAccel[dn], ylim = c(0.15, 0.85), xlim = c(-80, 0), col = "#f7e913ff", cex = 1.5)
+points(datSM$age[dn][which(datSM$propAccel[dn] > 0.5)], datSM$propAccel[dn][which(datSM$propAccel[dn] > 0.5)], pch = 19, col = "#f7e913ff", cex = 1.5)
+points(datSM$age[dn & (datSM$comparison %in% extremes)], datSM$propAccel[dn & (datSM$comparison %in% extremes)], pch = 5, cex = 1.5)
+text(x = datSM$age[dn & (datSM$comparison %in% extremes)], y = datSM$propAccel[dn & (datSM$comparison %in% extremes)], labels = datSM$comparison[dn & (datSM$comparison %in% extremes)])
+legend("bottomright", legend = paste0(c("cor = ", "p value = "), round(unlist(cor.test(datSM$age[dn][which(datSM$propAccel[dn] > 0.5)], datSM$propAccel[dn][which(datSM$propAccel[dn] > 0.5)])[c("estimate", "p.value")]), 3)))
+abline(h = 0.5, lty = 2)
+abline(lm(datSM$propAccel[dn][which(datSM$propAccel[dn] > 0.5)] ~ datSM$age[dn][which(datSM$propAccel[dn] > 0.5)]))
+
+
+plot(datFles$age[dnds], datFles$propAccel[dnds], ylim = c(0.15, 0.85), xlim = c(-80, 0), col = "#3c1b4dff", cex = 1.5)
+points(datFles$age[dnds][which(datFles$propAccel[dnds] > 0.5)], datFles$propAccel[dnds][which(datFles$propAccel[dnds] > 0.5)], pch = 19, col = "#3c1b4dff", cex = 1.5)
+points(datFles$age[dnds & (datFles$comparison %in% extremes)], datFles$propAccel[dnds & (datFles$comparison %in% extremes)], pch = 5, cex = 1.5)
+text(x = datFles$age[dnds & (datFles$comparison %in% extremes)], y = datFles$propAccel[dnds & (datFles$comparison %in% extremes)], labels = datFles$comparison[dnds & (datFles$comparison %in% extremes)])
+legend("bottomright", legend = paste0(c("cor = ", "p value = "), round(unlist(cor.test(datFles$age[dnds][which(datFles$propAccel[dnds] > 0.5)], datFles$propAccel[dnds][which(datFles$propAccel[dnds] > 0.5)])[c("estimate", "p.value")]), 3)))
+abline(h = 0.5, lty = 2)
+abline(lm(datFles$propAccel[dnds][which(datFles$propAccel[dnds] > 0.5)] ~ datFles$age[dnds][which(datFles$propAccel[dnds] > 0.5)]))
+
+plot(datSimil$age[dnds], datSimil$propAccel[dnds], ylim = c(0.15, 0.85), xlim = c(-80, 0), col = "#90d743ff", cex = 1.5)
+points(datSimil$age[dnds][which(datSimil$propAccel[dnds] > 0.5)], datSimil$propAccel[dnds][which(datSimil$propAccel[dnds] > 0.5)], pch = 19, col = "#90d743ff", cex = 1.5)
+points(datSimil$age[dnds & (datSimil$comparison %in% extremes)], datSimil$propAccel[dnds & (datSimil$comparison %in% extremes)], pch = 5, cex = 1.5)
+text(x = datSimil$age[dnds & (datSimil$comparison %in% extremes)], y = datSimil$propAccel[dnds & (datSimil$comparison %in% extremes)], labels = datSimil$comparison[dnds & (datSimil$comparison %in% extremes)])
+legend("bottomright", legend = paste0(c("cor = ", "p value = "), round(unlist(cor.test(datSimil$age[dnds][which(datSimil$propAccel[dnds] > 0.5)], datSimil$propAccel[dnds][which(datSimil$propAccel[dnds] > 0.5)])[c("estimate", "p.value")]), 3)))
+abline(h = 0.5, lty = 2)
+abline(lm(datSimil$propAccel[dnds][which(datSimil$propAccel[dnds] > 0.5)] ~ datSimil$age[dnds][which(datSimil$propAccel[dnds] > 0.5)]))
+
+plot(datSM$age[dnds], datSM$propAccel[dnds], ylim = c(0.15, 0.85), xlim = c(-80, 0), col = "#f7e913ff", cex = 1.5)
+points(datSM$age[dnds][which(datSM$propAccel[dnds] > 0.5)], datSM$propAccel[dnds][which(datSM$propAccel[dnds] > 0.5)], pch = 19, col = "#f7e913ff", cex = 1.5)
+points(datSM$age[dnds & (datSM$comparison %in% extremes)], datSM$propAccel[dnds & (datSM$comparison %in% extremes)], pch = 5, cex = 1.5)
+text(x = datSM$age[dnds & (datSM$comparison %in% extremes)], y = datSM$propAccel[dnds & (datSM$comparison %in% extremes)], labels = datSM$comparison[dnds & (datSM$comparison %in% extremes)])
+legend("bottomright", legend = paste0(c("cor = ", "p value = "), round(unlist(cor.test(datSM$age[dnds][which(datSM$propAccel[dnds] > 0.5)], datSM$propAccel[dnds][which(datSM$propAccel[dnds] > 0.5)])[c("estimate", "p.value")]), 3)))
+abline(h = 0.5, lty = 2)
+abline(lm(datSM$propAccel[dnds][which(datSM$propAccel[dnds] > 0.5)] ~ datSM$age[dnds][which(datSM$propAccel[dnds] > 0.5)]))
+dev.off()
+
+
+### See correction for sequence quality in the original script that processes genome size data.
+
+genomecomps <- read.csv("genomic_comparisons_data.csv", header = T, row.names = 1)
+genomecomps$age <- pasfaipair[c(T,F,F,F,F,F),"age"]
+
+genomeSimils <- grepl("VV|DD", rownames(genomecomps))
+genomeDiff <- !grepl("VV|DD", rownames(genomecomps))
+genomeSM <- grepl("-SM", rownames(genomecomps))
+genomeFles <- !grepl("VV|DD|-SM", rownames(genomecomps))
+
+
+## Tests of the association between age, mass, and rate difference (or genome size) - using the log ratio in body size (flightless / flying) such that a high ratio means a large flightless bird
+
+sheard <- read.csv("sheard_martin_traits.csv", header = T, row.names = 1)
+sheard$logmass <- log(sheard$meanBMg_martin)
+
+pasfaipair$masdif <- NA
+for(i in seq(1, 252, 6)){
+	compar <- strsplit(strsplit(as.character(pasfaipair$comparison[i]), split = "_")[[1]][1], split = "-")[[1]]
+	pasfaipair$masdif[c(i, i+2, i+4)] <- log(sheard[which(rownames(sheard) == compar[1]), "meanBMg_martin"] / sheard[which(rownames(sheard) == compar[2]), "meanBMg_martin"])
+}
+
+pasfaipair$flight <- NA
+pasfaipair$flight[grepl("VV|DD", pasfaipair$comparison)] <- "cl"
+pasfaipair$flight[grepl("SM", pasfaipair$comparison)] <- "sm"
+pasfaipair$flight[!grepl("SM|VV|DD", pasfaipair$comparison)] <- "fl"
+levels(pasfaipair$flight) <- c("cl", "fl", "sm")
+
+datSimil <- pasfaipair[grepl("VV|DD", pasfaipair$comparison),]
+datDiff <- pasfaipair[!grepl("VV|DD", pasfaipair$comparison),]
+datSM <- pasfaipair[grepl("SM", pasfaipair$comparison),]
+datFles <- pasfaipair[!grepl("SM|VV|DD", pasfaipair$comparison),]
+
+
+# Now same analysis for genome size comparisons
+
+genomecomps$masdif <- pasfaipair[c(T,F,F,F,F,F),"masdif"]
+
+genomecomps$flight <- NA
+genomecomps$flight[grepl("VV|DD", rownames(genomecomps))] <- "cl"
+genomecomps$flight[grepl("SM", rownames(genomecomps))] <- "sm"
+genomecomps$flight[!grepl("SM|VV|DD", rownames(genomecomps))] <- "fl"
+levels(genomecomps$flight) <- c("cl", "fl", "sm")
+
+genomecomps$logNoneExGenes <- log(genomecomps$Number.of.single.exon.gene_standScaf)
+genomecomps$logCval <- log(genomecomps$c_value)
+genomecomps$logTotGenes <- log(genomecomps$Number.of.total.gene_standScaf)
+genomecomps$logTotLen <- log(genomecomps$Total_Len..bp._standScaf)
+
+genomeSimils <- genomecomps[grepl("VV|DD", rownames(genomecomps)),]
+genomeDiff <- genomecomps[!grepl("VV|DD", rownames(genomecomps)),]
+genomeSM <- genomecomps[grepl("-SM", rownames(genomecomps)),]
+genomeFles <- genomecomps[!grepl("VV|DD|-SM", rownames(genomecomps)),]
+
+
+genomecomps$propAccelDs <- pasfaipair$propAccel[ds] - 0.5
+genomecomps$propAccelDn <- pasfaipair$propAccel[dn] - 0.5
+genomecomps$propAccelDnds <- pasfaipair$propAccel[dnds] - 0.5
+
+
+save(propFlesDsAccel_flight_mod, propFlesDsAccel_flight_mod, propFlesDsAccel_flight_mod, pasfaipair, exonN_flight_mod, cvalue_flight_mod, genomecomps, file = "genome_flight_age_mass_models.Rdata")
+
+save(genomecomps, file = "genome_flight_age_mass_data.Rdata")
+
+# SEM tests including total genome length ######## MOST REVEALING RESULTS SO FAR
+
+# m1 - flight drives molecular rate which drives coding genome shrinkage, which drives genome size
+mod1.1 <- 'propAccelDnds ~ 0 + flight + masdif
+logTotGenes ~ 0 + propAccelDnds + masdif
+logTotLen ~ 0 + logTotGenes + masdif'
+
+# m2 - flight drives genome size, which drives coding genome shrinkage, which drives molecular rate
+mod2.1 <- 'propAccelDnds ~ 0 + masdif + logTotGenes
+logTotGenes ~ 0 + flight + masdif
+logTotLen ~ 0 + flight + logTotGenes + masdif'
+
+# m3 - flight drives molecular rate but not genome size directly or indirectly
+mod3.1 <- 'propAccelDnds ~ 0 + flight + masdif
+logTotGenes ~ 0 + flight + masdif
+logTotLen ~ 0 + logTotGenes + masdif'
+
+# m4 - flight drives genome size but not molecular rate
+mod4.1 <- 'propAccelDnds ~ 0 + masdif
+logTotGenes ~ 0 + flight + masdif
+logTotLen ~ 0 + logTotGenes + flight + masdif'
+
+# m5 - flight drives both genome size and molecular rate independently
+mod5.1 <- 'propAccelDnds ~ 0 + flight + masdif
+logTotGenes ~ 0 + flight + masdif
+logTotLen ~ 0 + flight + logTotGenes + masdif'
+
+# m6 - Flight drives molecular rate, and molecular rate and coding genome size and flight together drive genome size
+mod6.1 <- 'propAccelDnds ~ 0 + flight + masdif
+logTotGenes ~ 0 + flight + masdif
+logTotLen ~ 0 + flight + propAccelDnds + logTotGenes + masdif'
+
+# m7 - Flight drives molecular rate, and molecular rate and coding genome size together drive genome size but not flight
+mod7.1 <- 'propAccelDnds ~ 0 + flight + masdif
+logTotGenes ~ 0 + flight + masdif
+logTotLen ~ 0 + propAccelDnds + logTotGenes + masdif'
+
+# We have to remove the Auk comparison due to a missing total length estimate
+
+AIC(suppressWarnings(cfa(mod1.1, data = genomecomps[-24,])))
+AIC(suppressWarnings(cfa(mod2.1, data = genomecomps[-24,])))
+AIC(suppressWarnings(cfa(mod3.1, data = genomecomps[-24,])))
+AIC(suppressWarnings(cfa(mod4.1, data = genomecomps[-24,])))
+AIC(suppressWarnings(cfa(mod5.1, data = genomecomps[-24,])))
+AIC(suppressWarnings(cfa(mod6.1, data = genomecomps[-24,])))
+AIC(suppressWarnings(cfa(mod7.1, data = genomecomps[-24,])))
+
+summary(cfa(mod1.1, data = genomecomps[-24,]))
+
+
+library(reshape2)
+library(gridExtra)
+library(viridis)
+genomecomps$comparison <- rownames(genomecomps)
+molboxplot <- melt(genomecomps[-24,c("flight", "propAccelDs", "propAccelDn", "propAccelDnds", "logTotGenes", "logTotLen", "comparison")])
+molboxplot$flight <- factor(molboxplot$flight, levels = c("fl", "cl", "sm"))
+flightcols <- c("fl" = "#3c1b4dff", "cl" = "#90d743ff", "sm" = "#f7e913ff")
+
+extremes <- c("GALGAL-COTJAP-DV", "CEUAER-CUCCAN-SM", "HEMCOM-CHAPEL-SM", "RHYJUB-PHALEP-DV", "SCOUMB-PELCRI-SM", "HERCAC-FALPER-SM")
+genomecomps$shape_group <- ifelse(genomecomps$comparison %in% extremes, "Group1", "Group2")
+
+
+# The following figure shows three sets of results (adding *-1 to show acceleration upon more flight): a. link between body mass and dS. b.link between N genes and dnds. c. link between N single exon genes and dn/ds. d. link between flight and molecular rates.
+
+plotlist <- list()
+pdf("Fig_3_regs_path_analysis.pdf", width = 7, height =7.5, useDingbats = F)
+plotlist[[1]] <- ggplot(genomecomps, aes(x = masdif *-1, y = propAccelDs, color = flight, group = 1, shape = shape_group)) + geom_point(size = 3) + geom_smooth(method = "lm", formula = "y~0+x") + theme_bw() + scale_color_manual(values = flightcols, name = "flight") + geom_hline(yintercept=0, linetype="dashed", size = 0.3) + geom_vline(xintercept = 0, linetype="dashed", size = 0.3) + scale_shape_manual(values = c("Group1" = 5, "Group2" = 19), guide = "none") +
+  geom_text(
+    data = subset(genomecomps[-24,], shape_group == "Group1"), 
+    aes(label = comparison), 
+    vjust = -1, size = 3
+  )
+plotlist[[2]] <- ggplot(genomecomps, aes(x = propAccelDnds, logTotGenes *-1, color = flight, group = 1, shape = shape_group)) + geom_point(size = 3) + geom_smooth(method = "lm", formula = "y~0+x") + theme_bw() + scale_color_manual(values = flightcols, name = "flight") + geom_hline(yintercept=0, linetype="dashed", size = 0.3) + geom_vline(xintercept = 0, linetype="dashed", size = 0.3) + scale_shape_manual(values = c("Group1" = 5, "Group2" = 19), guide = "none") +
+  geom_text(
+    data = subset(genomecomps[-24,], shape_group == "Group1"), 
+    aes(label = comparison), 
+    vjust = -1, size = 3
+  )
+plotlist[[3]] <- ggplot(genomecomps[-24,], aes(x = propAccelDnds, logTotLen *-1, color = flight, group = 1, shape = shape_group)) + geom_point(size = 3) + geom_smooth(method = "lm", formula = "y~0+x") + theme_bw() + scale_color_manual(values = flightcols, name = "flight") + geom_hline(yintercept=0, linetype="dashed", size = 0.3) + geom_vline(xintercept = 0, linetype="dashed", size = 0.3) + scale_shape_manual(values = c("Group1" = 5, "Group2" = 19), guide = "none") +
+  geom_text(
+    data = subset(genomecomps[-24,], shape_group == "Group1"), 
+    aes(label = comparison), 
+    vjust = -1, size = 3
+  )
+plotlist[[4]] <- ggplot(molboxplot, aes(y = value, x = variable, fill = flight)) + geom_boxplot(coef = 100) + scale_fill_manual(values = flightcols, name = "flight") + theme_bw() + geom_hline(yintercept=0, linetype="dashed", size = 0.3)
+plotlist[[5]] <- ggplot(genomecomps[-24,], aes(x = logTotGenes *-1, logTotLen *-1, color = flight, group = 1, shape = shape_group)) + geom_point(size = 3) + geom_smooth(method = "lm", formula = "y~0+x") + theme_bw() + scale_color_manual(values = flightcols, name = "flight") + geom_hline(yintercept=0, linetype="dashed", size = 0.3) + geom_vline(xintercept = 0, linetype="dashed", size = 0.3) + scale_shape_manual(values = c("Group1" = 5, "Group2" = 19), guide = "none") +
+  geom_text(
+    data = subset(genomecomps[-24,], shape_group == "Group1"), 
+    aes(label = comparison), 
+    vjust = -1, size = 3
+  )
+do.call("grid.arrange", c(plotlist, ncol=2))
+dev.off()
+
+
