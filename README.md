@@ -108,4 +108,6 @@ dnds_sisdifs_vol.Rdata
 taxon_comparisons_fless_flying.csv
 taxonomy_codes.csv
 dated.auk.tre
+genomic_comparisons_data.csv
+sheard_martin_traits.csv
 

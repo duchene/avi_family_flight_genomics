@@ -1,7 +1,8 @@
 library(phangorn)
+library(ggplot2)
 load("../data/dnds_sisdifs_vol.Rdata")
 
-tr <- read.tree("dated.auk.tre")
+tr <- read.tree("../data/dated.auk.tre")
 
 Cramers_V <- function(chi, n, df) sqrt((chi)/(n * df))
 
@@ -57,7 +58,7 @@ datDiff <- pasfaipair[!grepl("VV|DD", pasfaipair$comparison),]
 datSM <- pasfaipair[grepl("SM", pasfaipair$comparison),]
 datFles <- pasfaipair[!grepl("SM|VV|DD", pasfaipair$comparison),]
 
-extremes <- c("GALGAL-COTJAP_DV", "CEUAER-CUCCAN_SM", "HEMCOM-CHAPEL_SM", "RHYJUB-PHALEP_DV", "SCOUMB-PELCRI_SM", "HERCAC-FALPER_SM")
+extremes <- c("APTFOR-PELURI_FV", "ATLROG-HELFUL_FV", "NANHAR-PHACAR_FV", "RHYJUB-PHALEP_DV", "HERCAC-FALPER_SM", "CEUAER-CUCCAN_SM", "HEMCOM-CHAPEL_SM")
 
 pdf("../figures/Fig_2_age_rate_corrs.pdf", height = 9, width = 8, useDingbats = F)
 par(mfrow = c(3, 3))
@@ -258,7 +259,8 @@ molboxplot <- melt(genomecomps[-24,c("flight", "propAccelDs", "propAccelDn", "pr
 molboxplot$flight <- factor(molboxplot$flight, levels = c("fl", "cl", "sm"))
 flightcols <- c("fl" = "#3c1b4dff", "cl" = "#90d743ff", "sm" = "#f7e913ff")
 
-extremes <- c("GALGAL-COTJAP-DV", "CEUAER-CUCCAN-SM", "HEMCOM-CHAPEL-SM", "RHYJUB-PHALEP-DV", "SCOUMB-PELCRI-SM", "HERCAC-FALPER-SM")
+extremes <- c("APTFOR-PELURI-FV", "ATLROG-HELFUL-FV", "NANHAR-PHACAR-FV", "RHYJUB-PHALEP-DV", "HERCAC-FALPER-SM", "CEUAER-CUCCAN-SM", "HEMCOM-CHAPEL-SM")
+
 genomecomps$shape_group <- ifelse(genomecomps$comparison %in% extremes, "Group1", "Group2")
 
 
@@ -266,25 +268,25 @@ genomecomps$shape_group <- ifelse(genomecomps$comparison %in% extremes, "Group1"
 
 plotlist <- list()
 pdf("../figures/Fig_3_regs_path_analysis.pdf", width = 7, height =7.5, useDingbats = F)
-plotlist[[1]] <- ggplot(genomecomps, aes(x = masdif *-1, y = propAccelDs, color = flight, group = 1, shape = shape_group)) + geom_point(size = 3) + geom_smooth(method = "lm", formula = "y~0+x") + theme_bw() + scale_color_manual(values = flightcols, name = "flight") + geom_hline(yintercept=0, linetype="dashed", size = 0.3) + geom_vline(xintercept = 0, linetype="dashed", size = 0.3) + scale_shape_manual(values = c("Group1" = 5, "Group2" = 19), guide = "none") +
+plotlist[[1]] <- ggplot(genomecomps, aes(x = masdif *-1, y = propAccelDs *-1, color = flight, group = 1, shape = shape_group)) + geom_point(size = 3) + geom_smooth(method = "lm", formula = "y~0+x") + theme_bw() + scale_color_manual(values = flightcols, name = "flight") + geom_hline(yintercept=0, linetype="dashed", size = 0.3) + geom_vline(xintercept = 0, linetype="dashed", size = 0.3) + scale_shape_manual(values = c("Group1" = 5, "Group2" = 19), guide = "none") +
   geom_text(
     data = subset(genomecomps[-24,], shape_group == "Group1"), 
     aes(label = comparison), 
     vjust = -1, size = 3
   )
-plotlist[[2]] <- ggplot(genomecomps, aes(x = propAccelDnds, logTotGenes *-1, color = flight, group = 1, shape = shape_group)) + geom_point(size = 3) + geom_smooth(method = "lm", formula = "y~0+x") + theme_bw() + scale_color_manual(values = flightcols, name = "flight") + geom_hline(yintercept=0, linetype="dashed", size = 0.3) + geom_vline(xintercept = 0, linetype="dashed", size = 0.3) + scale_shape_manual(values = c("Group1" = 5, "Group2" = 19), guide = "none") +
+plotlist[[2]] <- ggplot(genomecomps, aes(x = propAccelDnds *-1, logTotGenes *-1, color = flight, group = 1, shape = shape_group)) + geom_point(size = 3) + geom_smooth(method = "lm", formula = "y~0+x") + theme_bw() + scale_color_manual(values = flightcols, name = "flight") + geom_hline(yintercept=0, linetype="dashed", size = 0.3) + geom_vline(xintercept = 0, linetype="dashed", size = 0.3) + scale_shape_manual(values = c("Group1" = 5, "Group2" = 19), guide = "none") +
   geom_text(
     data = subset(genomecomps[-24,], shape_group == "Group1"), 
     aes(label = comparison), 
     vjust = -1, size = 3
   )
-plotlist[[3]] <- ggplot(genomecomps[-24,], aes(x = propAccelDnds, logTotLen *-1, color = flight, group = 1, shape = shape_group)) + geom_point(size = 3) + geom_smooth(method = "lm", formula = "y~0+x") + theme_bw() + scale_color_manual(values = flightcols, name = "flight") + geom_hline(yintercept=0, linetype="dashed", size = 0.3) + geom_vline(xintercept = 0, linetype="dashed", size = 0.3) + scale_shape_manual(values = c("Group1" = 5, "Group2" = 19), guide = "none") +
+plotlist[[3]] <- ggplot(genomecomps[-24,], aes(x = propAccelDnds *-1, logTotLen *-1, color = flight, group = 1, shape = shape_group)) + geom_point(size = 3) + geom_smooth(method = "lm", formula = "y~0+x") + theme_bw() + scale_color_manual(values = flightcols, name = "flight") + geom_hline(yintercept=0, linetype="dashed", size = 0.3) + geom_vline(xintercept = 0, linetype="dashed", size = 0.3) + scale_shape_manual(values = c("Group1" = 5, "Group2" = 19), guide = "none") +
   geom_text(
     data = subset(genomecomps[-24,], shape_group == "Group1"), 
     aes(label = comparison), 
     vjust = -1, size = 3
   )
-plotlist[[4]] <- ggplot(molboxplot, aes(y = value, x = variable, fill = flight)) + geom_boxplot(coef = 100) + scale_fill_manual(values = flightcols, name = "flight") + theme_bw() + geom_hline(yintercept=0, linetype="dashed", size = 0.3)
+plotlist[[4]] <- ggplot(molboxplot, aes(y = value *-1, x = variable, fill = flight)) + geom_boxplot(coef = 100) + scale_fill_manual(values = flightcols, name = "flight") + theme_bw() + geom_hline(yintercept=0, linetype="dashed", size = 0.3)
 plotlist[[5]] <- ggplot(genomecomps[-24,], aes(x = logTotGenes *-1, logTotLen *-1, color = flight, group = 1, shape = shape_group)) + geom_point(size = 3) + geom_smooth(method = "lm", formula = "y~0+x") + theme_bw() + scale_color_manual(values = flightcols, name = "flight") + geom_hline(yintercept=0, linetype="dashed", size = 0.3) + geom_vline(xintercept = 0, linetype="dashed", size = 0.3) + scale_shape_manual(values = c("Group1" = 5, "Group2" = 19), guide = "none") +
   geom_text(
     data = subset(genomecomps[-24,], shape_group == "Group1"), 

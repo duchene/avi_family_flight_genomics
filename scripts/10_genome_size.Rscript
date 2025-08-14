@@ -2,9 +2,11 @@ library(phangorn)
 
 taxa <- c("Rhea_pennata", "Tinamus_guttatus", "Chauna_torquata", "Anas_platyrhynchos", "Gallus_gallus", "Coturnix_japonica", "Meleagris_gallopavo", "Tympanuchus_cupido", "Podilymbus_podiceps", "Podiceps_cristatus", "Mesitornis_unicolor", "Pterocles_gutturalis", "Columba_livia", "Patagioenas_fasciata", "Tauraco_erythrolophus", "Corythaixoides_concolor", "Lophotis_ruficrista", "Chlamydotis_macqueenii", "Geococcyx_californianus", "Crotophaga_sulcirostris", "Ceuthmochares_aereus", "Cuculus_canorus", "Antrostomus_carolinensis", "Chordeiles_acutipennis", "Hemiprocne_comata", "Chaetura_pelagica", "Oreotrochilus_melanogaster", "Calypte_anna", "Rhynochetos_jubatus", "Phaethon_lepturus", "Aptenodytes_forsteri", "Pelecanoides_urinatrix", "Mesembrinibis_cayennensis", "Nipponia_nippon", "Cochlearius_cochlearius", "Egretta_garzetta", "Scopus_umbretta", "Pelecanus_crispus", "Phalacrocorax_harrisi", "Phalacrocorax_carbo", "Atlantisia_rogersi", "Heliornis_fulica", "Psophia_crepitans", "Balearica_regulorum", "Charadrius_vociferus", "Charadrius_alexandrinus", "Alca_torda", "Aquila_chrysaetos", "Haliaeetus_albicilla", "Colius_striatus", "Urocolius_indicus", "Strix_occidentalis", "Tyto_alba", "Trogon_melanurus", "Apaloderma_vittatum", "Bucorvus_abyssinicus", "Buceros_rhinoceros", "Eurystomus_gularis", "Merops_nubicus", "Picoides_pubescens", "Indicator_maculatus", "Cariama_cristata", "Chunga_burmeisteri", "Herpetotheres_cachinnans", "Falco_peregrinus", "Nestor_notabilis", "Melopsittacus_undulatus", "Scytalopus_superciliaris", "Campylorhamphus_procurvoides", "Manacus_manacus", "Lepidothrix_coronata", "Menura_novaehollandiae", "Atrichornis_clamosus", "Orthonyx_spaldingii", "Pomatostomus_ruficeps", "Aphelocoma_coerulescens", "Corvus_brachyrhynchos", "Panurus_biarmicus", "Alaudala_cheleensis", "Taeniopygia_guttata", "Lonchura_striata", "Geospiza_fortis", "Nesospiza_acunhae")
 
-sampdat <- read.csv("../data/Supplementary_Table_1.csv", header = T, row.names = 1)
+sampdat <- read.csv("../data/Feng_Table_1.csv", header = T, row.names = 1)
 
 sampdat$Latin.name <- gsub(" ", "_", sampdat$Latin.name)
+
+sampdat$Latin.name[which(sampdat$Latin.name == "Nannopterum_harrisi")] <- "Phalacrocorax_harrisi" 
  
 sampdat$Contig_N50..bp. <- as.numeric(gsub(",", "", sampdat$Contig_N50..bp.))
 
@@ -12,7 +14,8 @@ rownames(sampdat) <- sampdat$Latin.name
 
 tax <- read.csv("../data/taxonomy_codes.csv", header = T, row.names = 1)
 tax <- tax[taxa,]
-sampdat <- sampdat[taxa,c(4:5, 8, 11, 14:30)]
+#sampdat <- sampdat[taxa,c(4:5, 8, 11, 14:30)]
+sampdat <- sampdat[taxa,c(4:27)]
 sampdat <- cbind(tax, sampdat)
 
 rawcompdat <- rbind(sampdat[1:46,], rep(NA, ncol(sampdat)), sampdat[47:83,])
@@ -22,22 +25,29 @@ rownames(rawcompdat)[47] <- "Pinguinus_impennis"
 
 aukdat <- read.dna("../data/OUT-0003_gff_aln-q30_razorbill_v2_sort9_clean_greatAuk.fa", format = 'fasta')
 auklen <- sum(sapply(aukdat, length), na.rm = T)
-aukgc <- GC.content(aukdat)
+aukgc <- GC.content(aukdat)*100
 aukNloc <- length(aukdat)
 aukmeanlen <- mean(sapply(aukdat, length), na.rm = T)
 
-rawcompdat[47,] <- c("Pinguinus_impennis", "PINIMP", "Charadriiformes", "Alcidae", "Pinguinus_impennis", "Pinguinus_impennis", NA, NA, auklen, NA, NA, NA, NA, NA, aukgc, NA, aukNloc, aukmeanlen, NA, NA, NA, NA, NA, NA, 34, 1.450195313)
+#rawcompdat[47,] <- c("Pinguinus_impennis", "PINIMP", "Charadriiformes", "Alcidae", "Pinguinus_impennis", "Pinguinus_impennis", NA, NA, auklen, NA, NA, NA, NA, NA, aukgc, NA, aukNloc, aukmeanlen, NA, NA, NA, NA, NA, NA, 34, 1.450195313)
+rawcompdat[47,] <- c("Pinguinus_impennis", "PINIMP", "Charadriiformes", "Alcidae", "Pinguinus_impennis", NA, NA, NA, NA, NA, NA, auklen, NA, NA, NA, NA, NA, NA, NA, aukgc, NA, aukNloc, aukmeanlen, NA, NA, NA, NA, NA, NA)
 rawcompdat[47,which(is.na(rawcompdat[47,]))] <- rawcompdat[48,which(is.na(rawcompdat[47,]))]
 
 # Turn columns to numeric
 
-for(i in 7:ncol(rawcompdat)) rawcompdat[,i] <- as.numeric(gsub(",", "", rawcompdat[,i]))
+#for(i in 7:ncol(rawcompdat)) rawcompdat[,i] <- as.numeric(gsub(",", "", rawcompdat[,i]))
+for(i in 6:ncol(rawcompdat)) rawcompdat[,i] <- as.numeric(gsub(",", "", rawcompdat[,i]))
 
 # Regression residuals are the preferred method to remove the association with the metric of quality.
 
-for(i in 9:26) rawcompdat[,paste0(colnames(rawcompdat)[i], "_standCont")] <- residuals(lm(rawcompdat[, i] ~ log(rawcompdat$Contig_N50..bp.))) + mean(rawcompdat[, i], na.rm = T)
+# Correction by Contig N50, which is the length of the shortest contig such that the sum of all contigs of equal or greater length comprises at least 50% of the total assembly length, serving as a measure of local sequence continuity without gaps.
+#for(i in 9:26) rawcompdat[,paste0(colnames(rawcompdat)[i], "_standCont")] <- residuals(lm(rawcompdat[, i] ~ log(rawcompdat$Contig_N50..bp.))) + mean(rawcompdat[, i], na.rm = T)
+
+# PREFERRED. Correction by Scaffold N50, which is the length of the shortest scaffold such that the sum of all scaffolds of equal or greater length accounts for at least 50% of the total assembly length, incorporating both contigs and estimated gaps to reflect long-range structural continuity.
 for(i in 9:26) rawcompdat[,paste0(colnames(rawcompdat)[i], "_standScaf")] <- residuals(lm(rawcompdat[, i] ~ log(rawcompdat$Scaffold_N50..bp.))) + mean(rawcompdat[, i], na.rm = T)
-for(i in 9:26) rawcompdat[,paste0(colnames(rawcompdat)[i], "_standBUSC")] <- residuals(lm(rawcompdat[, i] ~ (rawcompdat$Complete.BUSCOs..C....))) + mean(rawcompdat[, i], na.rm = T)
+
+# Correction by Complete BUSCOs (C), which is the percentage of Benchmarking Universal Single-Copy Orthologs (BUSCOs) that are found in their entirety within a genome assembly or gene set, providing a taxonomically informed measure of biological completeness and gene space coverage.
+#for(i in 9:26) rawcompdat[,paste0(colnames(rawcompdat)[i], "_standBUSC")] <- residuals(lm(rawcompdat[, i] ~ (rawcompdat$Complete.BUSCOs..C....))) + mean(rawcompdat[, i], na.rm = T)
 
 rownames(rawcompdat) <- rawcompdat$code
 
