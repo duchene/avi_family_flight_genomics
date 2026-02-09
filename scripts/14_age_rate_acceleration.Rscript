@@ -1,0 +1,269 @@
+library(phangorn)
+library(ggplot2)
+
+load("../data/dnds_sisdifs_vol.Rdata")
+
+tr <- read.tree("../data/dated.auk.tre")
+
+Cramers_V <- function(chi, n, df) sqrt((chi) / (n * df))
+
+
+# ---- 1. Build pair-level data ----
+
+tax <- read.csv("../data/taxon_comparisons_fless_flying.csv", header = T, row.names = 1)
+codes <- read.csv("../data/taxonomy_codes.csv", header = T, row.names = 1)
+rownames(codes) <- codes$code
+tax$trname <- codes[rownames(tax), "taxa"]
+tax$trname[which(is.na(tax$trname))] <- "Pinguinus_impennis"
+
+tax$age <- unlist(sapply(tax$trname, function(x) tr$edge.length[which(tr$edge[, 2] == which(tr$tip.label == x))]))
+tax$age <- as.numeric(sapply(seq(1, 84, 2), function(x) rep(c(tax$age[x], tax$age[x + 1])[which(c(tax$age[x], tax$age[x + 1]) == min(c(tax$age[x], tax$age[x + 1])))[1]], 2)))
+
+sisdifggds$sisntype <- paste0(sisdifggds$comparison, "_", sisdifggds$comptype)
+sisdifggdn$sisntype <- paste0(sisdifggdn$comparison, "_", sisdifggdn$comptype)
+sisdifggdnds$sisntype <- paste0(sisdifggdnds$comparison, "_", sisdifggdnds$comptype)
+
+# pasfaipair: one row per pair per rate metric, with accel/decel counts.
+# 42 pairs x 6 rows each (ds accel/decel, dn accel/decel, dnds accel/decel) = 252 rows.
+sisntype <- rep(unique(sisdifggds$sisntype), each = 6)
+pasfaipair <- data.frame(
+  comparison = sisntype,
+  moldat = factor(rep(c("ds", "ds", "dn", "dn", "dnds", "dnds"),
+                      length(unique(sisdifggds$sisntype))),
+                  levels = c("ds", "dn", "dnds")),
+  geneTrend = rep(c("flessAccel", "flessDecel"), 3 * length(unique(sisdifggds$sisntype))),
+  N = NA)
+
+N <- vector()
+for (i in unique(sisdifggds$sisntype)) {
+  N[length(N) + 1] <- length(which(sisdifggds[which(sisdifggds$sisntype %in% i), ]$moldif > 1))
+  N[length(N) + 1] <- length(which(sisdifggds[which(sisdifggds$sisntype %in% i), ]$moldif < 1))
+  N[length(N) + 1] <- length(which(sisdifggdn[which(sisdifggdn$sisntype %in% i), ]$moldif > 1))
+  N[length(N) + 1] <- length(which(sisdifggdn[which(sisdifggdn$sisntype %in% i), ]$moldif < 1))
+  N[length(N) + 1] <- length(which(sisdifggdnds[which(sisdifggdnds$sisntype %in% i), ]$moldif > 1))
+  N[length(N) + 1] <- length(which(sisdifggdnds[which(sisdifggdnds$sisntype %in% i), ]$moldif < 1))
+}
+pasfaipair$N <- N
+
+pasfaipair$comparison <- factor(as.character(pasfaipair$comparison),
+  levels = unique(as.character(pasfaipair$comparison))[
+    order(pasfaipair$N[c(T, F, F, F, F, F)] / pasfaipair$N[c(F, T, F, F, F, F)],
+          decreasing = F)])
+
+vs <- sapply(seq(1, nrow(pasfaipair), 2), function(x) {
+  mat <- matrix(c(pasfaipair$N[x], pasfaipair$N[x] + pasfaipair$N[x + 1],
+                  pasfaipair$N[x + 1], pasfaipair$N[x] + pasfaipair$N[x + 1]), 2, 2)
+  chsq <- chisq.test(mat)
+  Cramers_V(chsq$statistic, sum(mat), chsq$parameter)
+})
+pasfaipair$cramersV <- as.vector(sapply(vs, function(x) c(round(x, 2), NA)))
+
+# propAccel: proportion of genes accelerated in the less-flying sister.
+# Values > 0.5 = more acceleration in less-flying birds.
+pasfaipair$propAccel <- as.vector(sapply(seq(1, nrow(pasfaipair), 2), function(x)
+  c(pasfaipair$N[x + 1] / (pasfaipair$N[x] + pasfaipair$N[x + 1]), NA)))
+
+# Age of each pair (negative, representing time before present).
+pasfaipair$age <- as.vector(sapply(tax$age[c(T, F)], function(x) c(x, NA, x, NA, x, NA))) * (-1)
+
+pasfaipair$comparison <- as.character(pasfaipair$comparison)
+
+
+# ---- 2. Figure 2: Age vs rate acceleration (3x3 grid) ----
+#
+# Rows: dS, dN, dN/dS.  Columns: Flight-loss, Minimal (VV/DD), SM.
+# Logical selectors pick every 6th row for each rate metric.
+
+ds   <- c(T, F, F, F, F, F)
+dn   <- c(F, F, T, F, F, F)
+dnds <- c(F, F, F, F, T, F)
+
+datSimil <- pasfaipair[grepl("VV|DD", pasfaipair$comparison), ]
+datDiff  <- pasfaipair[!grepl("VV|DD", pasfaipair$comparison), ]
+datSM    <- pasfaipair[grepl("SM", pasfaipair$comparison), ]
+datFles  <- pasfaipair[!grepl("SM|VV|DD", pasfaipair$comparison), ]
+
+extremes <- c("APTFOR-PELURI_FV", "ATLROG-HELFUL_FV", "NANHAR-PHACAR_FV",
+              "RHYJUB-PHALEP_DV", "HERCAC-FALPER_SM", "CEUAER-CUCCAN_SM",
+              "HEMCOM-CHAPEL_SM")
+
+# Helper: plot one panel of the age-vs-rate figure.
+plot_age_rate <- function(dat, rate_sel, col, main_title = "") {
+  plot(dat$age[rate_sel], dat$propAccel[rate_sel],
+       ylim = c(0.15, 0.85), xlim = c(-80, 0),
+       main = main_title, col = col, cex = 1.5)
+  above <- which(dat$propAccel[rate_sel] > 0.5)
+  points(dat$age[rate_sel][above], dat$propAccel[rate_sel][above],
+         pch = 19, col = col, cex = 1.5)
+  ext <- dat$comparison %in% extremes
+  points(dat$age[rate_sel & ext], dat$propAccel[rate_sel & ext], pch = 5, cex = 1.5)
+  text(x = dat$age[rate_sel & ext], y = dat$propAccel[rate_sel & ext],
+       labels = dat$comparison[rate_sel & ext])
+  ct <- cor.test(dat$age[rate_sel][above], dat$propAccel[rate_sel][above])
+  legend("bottomright",
+    legend = paste0(c("cor = ", "p value = "), round(unlist(ct[c("estimate", "p.value")]), 3)))
+  abline(h = 0.5, lty = 2)
+  abline(lm(dat$propAccel[rate_sel][above] ~ dat$age[rate_sel][above]))
+}
+
+pdf("../figures/Fig_2_age_rate_corrs.pdf", height = 9, width = 8, useDingbats = F)
+par(mfrow = c(3, 3))
+# Row 1: dS
+plot_age_rate(datFles,  ds, "#3c1b4dff", "Towards flight loss")
+plot_age_rate(datSimil, ds, "#90d743ff", "Minimal")
+plot_age_rate(datSM,    ds, "#f7e913ff", "To migratory")
+# Row 2: dN
+plot_age_rate(datFles,  dn, "#3c1b4dff")
+plot_age_rate(datSimil, dn, "#90d743ff")
+plot_age_rate(datSM,    dn, "#f7e913ff")
+# Row 3: dN/dS
+plot_age_rate(datFles,  dnds, "#3c1b4dff")
+plot_age_rate(datSimil, dnds, "#90d743ff")
+plot_age_rate(datSM,    dnds, "#f7e913ff")
+dev.off()
+
+
+# ---- 3. Genome size vs rate acceleration (path analysis data) ----
+
+genomecomps <- read.csv("../data/genomic_comparisons_data.csv", header = T, row.names = 1)
+genomecomps$age <- pasfaipair[c(T, F, F, F, F, F), "age"]
+
+genomecomps$flight <- NA
+genomecomps$flight[grepl("VV|DD", rownames(genomecomps))] <- "cl"
+genomecomps$flight[grepl("SM", rownames(genomecomps))] <- "sm"
+genomecomps$flight[!grepl("SM|VV|DD", rownames(genomecomps))] <- "fl"
+levels(genomecomps$flight) <- c("cl", "fl", "sm")
+
+sheard <- read.csv("../data/sheard_martin_traits.csv", header = T, row.names = 1)
+sheard$logmass <- log(sheard$meanBMg_martin)
+
+# Body mass log-ratio per pair (less-flying / more-flying).
+pasfaipair$masdif <- NA
+for (i in seq(1, 252, 6)) {
+  compar <- strsplit(strsplit(as.character(pasfaipair$comparison[i]), split = "_")[[1]][1], split = "-")[[1]]
+  pasfaipair$masdif[c(i, i + 2, i + 4)] <- log(
+    sheard[which(rownames(sheard) == compar[1]), "meanBMg_martin"] /
+    sheard[which(rownames(sheard) == compar[2]), "meanBMg_martin"])
+}
+
+pasfaipair$flight <- NA
+pasfaipair$flight[grepl("VV|DD", pasfaipair$comparison)] <- "cl"
+pasfaipair$flight[grepl("SM", pasfaipair$comparison)] <- "sm"
+pasfaipair$flight[!grepl("SM|VV|DD", pasfaipair$comparison)] <- "fl"
+levels(pasfaipair$flight) <- c("cl", "fl", "sm")
+
+datSimil <- pasfaipair[grepl("VV|DD", pasfaipair$comparison), ]
+datDiff  <- pasfaipair[!grepl("VV|DD", pasfaipair$comparison), ]
+datSM    <- pasfaipair[grepl("SM", pasfaipair$comparison), ]
+datFles  <- pasfaipair[!grepl("SM|VV|DD", pasfaipair$comparison), ]
+
+genomecomps$masdif <- pasfaipair[c(T, F, F, F, F, F), "masdif"]
+
+# Scaffold-N50-corrected genome metrics (from script 13).
+genomecomps$logNoneExGenes <- log(genomecomps$Number.of.single.exon.gene_standScaf)
+genomecomps$logCval <- log(genomecomps$c_value)
+genomecomps$logTotGenes <- log(genomecomps$Number.of.total.gene_standScaf)
+genomecomps$logTotLen <- log(genomecomps$Total_Len..bp._standScaf)
+
+# Rate acceleration proportions (centred on zero).
+genomecomps$propAccelDs   <- pasfaipair$propAccel[ds] - 0.5
+genomecomps$propAccelDn   <- pasfaipair$propAccel[dn] - 0.5
+genomecomps$propAccelDnds <- pasfaipair$propAccel[dnds] - 0.5
+
+save(genomecomps, file = "../data/genome_flight_age_mass_data.Rdata")
+
+
+# ---- 4. SEM model comparison (frequentist, lavaan) ----
+#
+# Seven competing path models. Row 24 (Great Auk) excluded: no reliable
+# independent total genome length estimate.
+
+mod1.1 <- 'propAccelDnds ~ 0 + flight + masdif
+logTotGenes ~ 0 + propAccelDnds + masdif
+logTotLen ~ 0 + logTotGenes + masdif'
+
+mod2.1 <- 'propAccelDnds ~ 0 + masdif + logTotGenes
+logTotGenes ~ 0 + flight + masdif
+logTotLen ~ 0 + flight + logTotGenes + masdif'
+
+mod3.1 <- 'propAccelDnds ~ 0 + flight + masdif
+logTotGenes ~ 0 + flight + masdif
+logTotLen ~ 0 + logTotGenes + masdif'
+
+mod4.1 <- 'propAccelDnds ~ 0 + masdif
+logTotGenes ~ 0 + flight + masdif
+logTotLen ~ 0 + logTotGenes + flight + masdif'
+
+mod5.1 <- 'propAccelDnds ~ 0 + flight + masdif
+logTotGenes ~ 0 + flight + masdif
+logTotLen ~ 0 + flight + logTotGenes + masdif'
+
+mod6.1 <- 'propAccelDnds ~ 0 + flight + masdif
+logTotGenes ~ 0 + flight + masdif
+logTotLen ~ 0 + flight + propAccelDnds + logTotGenes + masdif'
+
+mod7.1 <- 'propAccelDnds ~ 0 + flight + masdif
+logTotGenes ~ 0 + flight + masdif
+logTotLen ~ 0 + propAccelDnds + logTotGenes + masdif'
+
+AIC(suppressWarnings(cfa(mod1.1, data = genomecomps[-24, ])))
+AIC(suppressWarnings(cfa(mod2.1, data = genomecomps[-24, ])))
+AIC(suppressWarnings(cfa(mod3.1, data = genomecomps[-24, ])))
+AIC(suppressWarnings(cfa(mod4.1, data = genomecomps[-24, ])))
+AIC(suppressWarnings(cfa(mod5.1, data = genomecomps[-24, ])))
+AIC(suppressWarnings(cfa(mod6.1, data = genomecomps[-24, ])))
+AIC(suppressWarnings(cfa(mod7.1, data = genomecomps[-24, ])))
+
+summary(cfa(mod1.1, data = genomecomps[-24, ]))
+
+
+# ---- 5. Figure 3: Path analysis scatterplots and boxplots ----
+
+library(reshape2)
+library(gridExtra)
+
+genomecomps$comparison <- rownames(genomecomps)
+
+molboxplot <- melt(genomecomps[-24, c("flight", "propAccelDs", "propAccelDn",
+                                       "propAccelDnds", "logTotGenes", "logTotLen",
+                                       "comparison")])
+molboxplot$flight <- factor(molboxplot$flight, levels = c("fl", "cl", "sm"))
+flightcols <- c(fl = "#3c1b4dff", cl = "#90d743ff", sm = "#f7e913ff")
+
+extremes <- c("APTFOR-PELURI-FV", "ATLROG-HELFUL-FV", "NANHAR-PHACAR-FV",
+              "RHYJUB-PHALEP-DV", "HERCAC-FALPER-SM", "CEUAER-CUCCAN-SM",
+              "HEMCOM-CHAPEL-SM")
+genomecomps$shape_group <- ifelse(genomecomps$comparison %in% extremes, "Group1", "Group2")
+
+# Helper: scatter panel for path analysis figure.
+# Signs are flipped (*-1) so positive = acceleration with more flight.
+make_scatter <- function(data, xvar, yvar) {
+  ggplot(data, aes_string(x = paste0(xvar, " * -1"),
+                          y = paste0(yvar, " * -1"),
+                          color = "flight", group = 1,
+                          shape = "shape_group")) +
+    geom_point(size = 3) +
+    geom_smooth(method = "lm", formula = "y~0+x") +
+    theme_bw() +
+    scale_color_manual(values = flightcols, name = "flight") +
+    geom_hline(yintercept = 0, linetype = "dashed", size = 0.3) +
+    geom_vline(xintercept = 0, linetype = "dashed", size = 0.3) +
+    scale_shape_manual(values = c(Group1 = 5, Group2 = 19), guide = "none") +
+    geom_text(data = subset(data, shape_group == "Group1"),
+              aes(label = comparison), vjust = -1, size = 3)
+}
+
+plotlist <- list()
+plotlist[[1]] <- make_scatter(genomecomps, "masdif", "propAccelDs")
+plotlist[[2]] <- make_scatter(genomecomps, "propAccelDnds", "logTotGenes")
+plotlist[[3]] <- make_scatter(genomecomps[-24, ], "propAccelDnds", "logTotLen")
+plotlist[[4]] <- ggplot(molboxplot, aes(y = value * -1, x = variable, fill = flight)) +
+  geom_boxplot(coef = 100) +
+  scale_fill_manual(values = flightcols, name = "flight") +
+  theme_bw() +
+  geom_hline(yintercept = 0, linetype = "dashed", size = 0.3)
+plotlist[[5]] <- make_scatter(genomecomps[-24, ], "logTotGenes", "logTotLen")
+
+pdf("../figures/Fig_3_regs_path_analysis.pdf", width = 7, height = 7.5, useDingbats = F)
+do.call("grid.arrange", c(plotlist, ncol = 2))
+dev.off()

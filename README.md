@@ -89,7 +89,34 @@ dnds_analyses
 File:
 dnds_sisdifs_vol.Rdata
 
-* 10_genome_size.Rscript - Test for differences in a broad range of metrics of genome size among flightless and volant pairs.
+* 10_aitchison_variance.Rscript - Calculate Aitchison variance (CLR-transformed base composition heterogeneity) for each alignment to quantify compositional heterogeneity across taxa per gene.
+	* Requires
+Code:
+ape
+Folder:
+c123
+Output:
+aitchison_variance_results.csv
+aitchison_variance_results.rds
+
+* 11_base_composition_vs_rates.Rscript - Test whether Aitchison variance per gene correlates with Bernoulli test p-values from script 9. Confirms base composition heterogeneity is not confounding the evolutionary rate signal.
+	* Requires
+Code:
+ggplot2
+gridExtra
+File:
+p_values_per_locus.Rdata
+aitchison_variance_results.csv
+
+* 12_ks_permutation_envelopes.Rscript - Permutation-based calibration of KS tests from script 9. Shuffles flight-category labels across the 42 sister pairs (1000 permutations), recomputes per-gene binomial p-values, and builds pointwise 95% null CDF envelopes. Accounts for p-value discreteness with small N, gene-gene correlation, and fixed study design.
+	* Requires
+Code:
+ggplot2
+File:
+dnds_sisdifs_vol.Rdata
+p_values_per_locus.Rdata
+
+* 13_genome_size.Rscript - Test for differences in a broad range of metrics of genome size among flightless and volant pairs.
 	* Requires
 Code:
 phangorn
@@ -98,7 +125,7 @@ Supplementary_Table_1_corrected.csv
 taxonomy_codes.csv
 GreatAuk/OUT-0003_gff_aln-q30_razorbill_v2_sort9_clean_greatAuk.fa
 
-* 11_age_rate_acceleration.Rscript - Run regression models of how genome size and mutation rate are explained by flight.
+* 14_age_rate_acceleration.Rscript - Run regression models of how genome size and mutation rate are explained by flight. Frequentist path analysis with lavaan.
 	* Requires
 Code:
 phangorn
@@ -110,4 +137,27 @@ taxonomy_codes.csv
 dated.auk.tre
 genomic_comparisons_data.csv
 sheard_martin_traits.csv
+
+* 15_bayesian_path_analysis.Rscript - Bayesian structural equation modelling of the same 7 competing path models from script 14, fitted with blavaan. Uses BUSCO completeness as an explicit assembly-quality covariate. Includes convergence diagnostics, model comparison (WAIC, LOO-IC), posterior predictive checks, and sensitivity analysis excluding the ATLROG-HELFUL outlier.
+	* Requires
+Code:
+blavaan
+lavaan
+File:
+dnds_sisdifs_vol.Rdata
+taxon_comparisons_fless_flying.csv
+taxonomy_codes.csv
+dated.auk.tre
+genomic_comparisons_data.csv
+sheard_martin_traits.csv
+
+* 16_plot_bayesian_results.Rscript - Publication figures for the Bayesian path analysis. Loads saved results from script 15 without re-fitting models.
+	* Requires
+Code:
+blavaan
+lavaan
+ggplot2
+File:
+bayesian_path_results.Rdata
+bayesian_path_sensitivity.Rdata
 
