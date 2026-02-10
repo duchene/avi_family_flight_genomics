@@ -462,4 +462,138 @@ print(p_combined)
 dev.off()
 cat("Saved: ../figures/Fig_bayes_forest_combined.pdf\n")
 
+# ---- 9. Posterior predictive check (best LOO-IC models) ----
+#
+# For each metric's best model, simulate replicated datasets from the
+# posterior (coefficients + residual noise) and compare densities against
+# the observed data.  Full generative simulation: equations are evaluated
+# in causal order so downstream variables use simulated upstream values.
+
+cat("\n--- Generating posterior predictive check figure ---\n")
+
+set.seed(42)
+n_rep <- 200
+n_obs <- nrow(dat)
+
+var_labels_ppc <- c(
+  propAccelDnds   = "Rate acceleration",
+  propAccelDn     = "Rate acceleration",
+  propAccelDs     = "Rate acceleration",
+  logTotGenes_raw = "Gene count (log ratio)",
+  logTotLen_raw   = "Genome length (log ratio)"
+)
+
+ppc_list <- vector("list", n_rep * 3 * 3 + 3 * 3)
+k <- 0
+
+for (metric in names(rate_metrics)) {
+  res <- all_results[[metric]]
+  rate_var <- rate_metrics[metric]
+  rate_label <- rate_labels[metric]
+  ct <- res$comparison_tab
+  best_loo <- which.min(ct$LOO)
+  fit <- res$bayes_fits[[best_loo]]
+  if (is.null(fit)) next
+
+  cat("  PPC for", rate_label, "(Model", best_loo, ")\n")
+
+  draws_mat <- do.call(rbind, blavInspect(fit, "mcmc"))
+  draws_mat <- draws_mat[, !apply(draws_mat, 2, function(x) any(is.na(x))),
+                         drop = FALSE]
+  pt <- parameterTable(fit)
+  reg <- pt[pt$op == "~", ]
+  endogenous <- unique(reg$lhs)
+
+  # Numeric copy of data (factors -> integer codes, matching lavaan internals)
+  ppc_dat <- as.data.frame(dat)
+  for (v in names(ppc_dat)) {
+    if (is.factor(ppc_dat[[v]]) || is.character(ppc_dat[[v]]))
+      ppc_dat[[v]] <- as.numeric(as.factor(ppc_dat[[v]]))
+  }
+
+  draw_idx <- sample(nrow(draws_mat), min(n_rep, nrow(draws_mat)))
+
+  for (d in seq_along(draw_idx)) {
+    idx <- draw_idx[d]
+    sim <- ppc_dat
+
+    # Simulate in equation order (causal chain)
+    for (endo in endogenous) {
+      eq <- reg[reg$lhs == endo, ]
+      fitted <- rep(0, n_obs)
+      for (r in seq_len(nrow(eq))) {
+        coef_name <- paste0(endo, "~", eq$rhs[r])
+        if (coef_name %in% colnames(draws_mat) &&
+            eq$rhs[r] %in% names(sim)) {
+          coef_val <- draws_mat[idx, coef_name]
+          if (!is.na(coef_val)) fitted <- fitted + coef_val * sim[[eq$rhs[r]]]
+        }
+      }
+      # Residual SD from posterior draw
+      var_name <- paste0(endo, "~~", endo)
+      res_sd <- if (var_name %in% colnames(draws_mat) &&
+                    !is.na(draws_mat[idx, var_name]) &&
+                    draws_mat[idx, var_name] > 0) {
+        sqrt(draws_mat[idx, var_name])
+      } else {
+        sd(ppc_dat[[endo]] - fitted, na.rm = TRUE)
+      }
+      sim[[endo]] <- fitted + rnorm(n_obs, 0, res_sd)
+    }
+
+    for (endo in endogenous) {
+      k <- k + 1
+      ppc_list[[k]] <- data.frame(metric = rate_label,
+                                  variable = var_labels_ppc[endo],
+                                  value = sim[[endo]],
+                                  type = "rep", rep_id = d,
+                                  stringsAsFactors = FALSE)
+    }
+  }
+
+  # Observed data
+  for (endo in endogenous) {
+    k <- k + 1
+    ppc_list[[k]] <- data.frame(metric = rate_label,
+                                variable = var_labels_ppc[endo],
+                                value = ppc_dat[[endo]],
+                                type = "obs", rep_id = 0,
+                                stringsAsFactors = FALSE)
+  }
+}
+
+ppc_df <- do.call(rbind, ppc_list[seq_len(k)])
+ppc_df$variable <- factor(ppc_df$variable,
+                          levels = c("Rate acceleration",
+                                     "Gene count (log ratio)",
+                                     "Genome length (log ratio)"))
+ppc_df$metric <- factor(ppc_df$metric,
+                        levels = c("dS", "dN", "dN/dS"),
+                        labels = c("d[S]", "d[N]", "italic(omega)"))
+
+ppc_rep <- ppc_df[ppc_df$type == "rep", ]
+ppc_obs <- ppc_df[ppc_df$type == "obs", ]
+
+p_ppc <- ggplot() +
+  geom_density(data = ppc_rep,
+               aes(x = value, group = rep_id),
+               colour = "grey75", linewidth = 0.15) +
+  geom_density(data = ppc_obs,
+               aes(x = value),
+               colour = "firebrick", linewidth = 0.8) +
+  facet_grid(variable ~ metric, scales = "free",
+             labeller = labeller(metric = label_parsed)) +
+  labs(x = "Value", y = "Density",
+       title = "Posterior predictive check (best LOO-IC models)",
+       subtitle = "Grey = replicated from posterior; red = observed") +
+  theme_bw(base_size = 10) +
+  theme(strip.background = element_rect(fill = "grey95"),
+        plot.title = element_text(size = 11))
+
+pdf("../figures/Fig_bayes_ppc.pdf", width = 8, height = 6,
+    useDingbats = FALSE)
+print(p_ppc)
+dev.off()
+cat("Saved: ../figures/Fig_bayes_ppc.pdf\n")
+
 cat("\nAll figures generated.\n")
