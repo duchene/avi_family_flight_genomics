@@ -1,12 +1,13 @@
 # Publication figures for Bayesian path analysis results.
-# Loads saved results from bayesian_path_analysis.R — no model fitting required.
+# Loads saved results from 15_bayesian_path_analysis.Rscript — no model fitting
+# required. Generates per-metric figures (dN/dS, dN, dS) and a combined
+# model-comparison figure.
 
 library(blavaan)
 library(lavaan)
 library(ggplot2)
 
 load("../data/bayesian_path_results.Rdata")
-load("../data/bayesian_path_sensitivity.Rdata")
 
 # ---- Helper: extract regression posteriors from a blavaan fit ----
 
@@ -20,6 +21,8 @@ extract_paths <- function(fit, model_label = "") {
     col_name <- paste0(reg$lhs[r], "~", reg$rhs[r])
     if (col_name %in% colnames(draws_mat)) {
       d <- draws_mat[, col_name]
+      d <- d[!is.na(d)]
+      if (length(d) == 0) next
       ci <- quantile(d, c(0.025, 0.25, 0.75, 0.975))
       p_pos <- mean(d > 0)
       out <- rbind(out, data.frame(
@@ -33,207 +36,430 @@ extract_paths <- function(fit, model_label = "") {
   out
 }
 
-path_labels <- c(
-  "propAccelDnds~flight"         = "Flight habit \u2192 Rate accel. (dN/dS)",
-  "propAccelDnds~masdif"         = "Body mass diff. \u2192 Rate accel. (dN/dS)",
-  "logTotGenes_raw~propAccelDnds"= "Rate accel. (dN/dS) \u2192 Gene count",
-  "logTotGenes_raw~masdif"       = "Body mass diff. \u2192 Gene count",
-  "logTotGenes_raw~logBUSCO"     = "BUSCO completeness \u2192 Gene count",
-  "logTotLen_raw~logTotGenes_raw"= "Gene count \u2192 Genome length",
-  "logTotLen_raw~masdif"         = "Body mass diff. \u2192 Genome length",
-  "logTotLen_raw~logBUSCO"       = "BUSCO completeness \u2192 Genome length"
-)
+# ---- Helper: generate path_labels and key_labels for a given rate metric ----
 
-# ---- 1. Diagnostic plots (histograms, QQ, pairs) ----
-
-pdf("../figures/Fig_S_bayes_diagnostics.pdf", width = 10, height = 8,
-    useDingbats = FALSE)
-par(mfrow = c(2, 3))
-for (i in seq_along(analysis_vars)) {
-  v <- dat[[analysis_vars[i]]]; v <- v[!is.na(v)]
-  hist(v, breaks = 15, probability = TRUE, main = var_labels[i],
-       xlab = analysis_vars[i], col = "grey85", border = "grey60")
-  curve(dnorm(x, mean(v), sd(v)), add = TRUE, col = "firebrick", lwd = 2)
-  rug(v)
+make_path_labels <- function(rate_var, rate_label) {
+  c(
+    setNames(paste0("Flight habit \u2192 Rate accel. (", rate_label, ")"),
+             paste0(rate_var, "~flight")),
+    setNames(paste0("Body mass diff. \u2192 Rate accel. (", rate_label, ")"),
+             paste0(rate_var, "~masdif")),
+    setNames(paste0("Rate accel. (", rate_label, ") \u2192 Gene count"),
+             paste0("logTotGenes_raw~", rate_var)),
+    "logTotGenes_raw~masdif"       = "Body mass diff. \u2192 Gene count",
+    "logTotGenes_raw~logBUSCO"     = "BUSCO completeness \u2192 Gene count",
+    "logTotGenes_raw~flight"       = "Flight habit \u2192 Gene count",
+    "logTotLen_raw~logTotGenes_raw"= "Gene count \u2192 Genome length",
+    "logTotLen_raw~masdif"         = "Body mass diff. \u2192 Genome length",
+    "logTotLen_raw~logBUSCO"       = "BUSCO completeness \u2192 Genome length",
+    "logTotLen_raw~flight"         = "Flight habit \u2192 Genome length",
+    setNames(paste0("Rate accel. (", rate_label, ") \u2192 Genome length"),
+             paste0("logTotLen_raw~", rate_var))
+  )
 }
-par(mfrow = c(2, 3))
-for (i in seq_along(analysis_vars)) {
-  v <- dat[[analysis_vars[i]]]; v <- v[!is.na(v)]
-  qqnorm(v, main = paste("QQ:", var_labels[i]), pch = 16, cex = 0.8)
-  qqline(v, col = "firebrick", lwd = 2)
+
+make_key_paths <- function(rate_var) {
+  c(
+    paste0(rate_var, "~flight"),
+    paste0(rate_var, "~masdif"),
+    paste0("logTotGenes_raw~", rate_var),
+    "logTotGenes_raw~flight",
+    "logTotLen_raw~logTotGenes_raw",
+    "logTotLen_raw~flight",
+    paste0("logTotLen_raw~", rate_var)
+  )
 }
-pairs(dat[, analysis_vars], pch = 16, cex = 0.7,
-      col = c(cl = "#90d743", fl = "#3c1b4d", sm = "#f7e913")[dat$flight],
-      main = "Pairwise scatterplots (coloured by flight category)")
-dev.off()
-cat("Saved: ../figures/Fig_S_bayes_diagnostics.pdf\n")
 
-# ---- 2. Trace plots for best model ----
-
-mcmc_list <- blavInspect(bayes_fits[[best_idx]], "mcmc")
-n_pars <- ncol(mcmc_list[[1]])
-n_plot <- min(n_pars, 11)
-n_cols <- 3
-n_rows <- ceiling(n_plot / n_cols)
-pdf("../figures/Fig_S_bayes_traceplots.pdf", width = 10, height = 1.3 * n_rows,
-    useDingbats = FALSE)
-par(mfrow = c(n_rows, n_cols), mar = c(2, 3, 1.5, 1))
-for (p in seq_len(n_plot)) {
-  plot(mcmc_list[[1]][, p], type = "l", col = "steelblue",
-       main = colnames(mcmc_list[[1]])[p], ylab = "", xlab = "",
-       cex.main = 0.8)
-  lines(mcmc_list[[2]][, p], col = "coral")
+make_key_labels <- function(rate_var, rate_label) {
+  c(
+    setNames(paste0("Flight \u2192 Rate accel. (", rate_label, ")"),
+             paste0(rate_var, "~flight")),
+    setNames(paste0("Mass diff. \u2192 Rate accel. (", rate_label, ")"),
+             paste0(rate_var, "~masdif")),
+    setNames(paste0("Rate accel. (", rate_label, ") \u2192 Gene count"),
+             paste0("logTotGenes_raw~", rate_var)),
+    "logTotGenes_raw~flight"        = "Flight \u2192 Gene count",
+    "logTotLen_raw~logTotGenes_raw"  = "Gene count \u2192 Genome length",
+    "logTotLen_raw~flight"           = "Flight \u2192 Genome length",
+    setNames(paste0("Rate accel. (", rate_label, ") \u2192 Genome length"),
+             paste0("logTotLen_raw~", rate_var))
+  )
 }
-dev.off()
-cat("Saved: ../figures/Fig_S_bayes_traceplots.pdf\n")
 
-# ---- 3. Forest plot of best model coefficients ----
+# ---- Loop over rate metrics ----
 
-best_paths <- extract_paths(bayes_fits[[best_idx]], model_names[best_idx])
-best_paths$label <- path_labels[best_paths$path]
-best_paths$label <- factor(best_paths$label, levels = rev(path_labels))
-best_paths$equation <- ifelse(grepl("propAccelDnds~", best_paths$path),
-                              "Rate acceleration",
-                       ifelse(grepl("logTotGenes_raw~", best_paths$path),
-                              "Gene count", "Genome length"))
-best_paths$equation <- factor(best_paths$equation,
-                              levels = c("Rate acceleration", "Gene count",
-                                         "Genome length"))
-best_paths$sig <- ifelse(best_paths$p_dir >= 0.95, "Credible", "Uncertain")
+for (metric in names(rate_metrics)) {
 
-p_forest <- ggplot(best_paths, aes(x = median, y = label, colour = sig)) +
-  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
-  geom_linerange(aes(xmin = ci_lo, xmax = ci_hi), linewidth = 0.5) +
-  geom_linerange(aes(xmin = q25, xmax = q75), linewidth = 1.5) +
-  geom_point(size = 2.5) +
-  scale_colour_manual(values = c(Credible = "firebrick", Uncertain = "grey50"),
-                      name = "95% CI") +
-  facet_grid(equation ~ ., scales = "free_y", space = "free_y") +
-  labs(x = "Posterior median (95% and 50% credible intervals)",
-       y = NULL,
-       title = "Bayesian path coefficients (Model 1: Flight \u2192 Rates)") +
-  theme_bw(base_size = 11) +
-  theme(strip.background = element_rect(fill = "grey95"),
-        panel.grid.major.y = element_blank(),
-        legend.position = "bottom")
+  res <- all_results[[metric]]
+  rate_var <- rate_metrics[metric]
+  rate_label <- rate_labels[metric]
+  bayes_fits <- res$bayes_fits
+  lavaan_fits <- res$lavaan_fits
+  comparison_tab <- res$comparison_tab
+  best_idx <- res$best_idx
+  fits_trim <- res$fits_trim
+  analysis_vars <- res$analysis_vars
+  var_labels <- res$var_labels
+  model_names <- res$model_names
 
-pdf("../figures/Fig_bayes_forest_plot.pdf", width = 5.5, height = 5,
-    useDingbats = FALSE)
-print(p_forest)
-dev.off()
-cat("Saved: ../figures/Fig_bayes_forest_plot.pdf\n")
+  path_labels <- make_path_labels(rate_var, rate_label)
+  key_paths <- make_key_paths(rate_var)
+  key_labels <- make_key_labels(rate_var, rate_label)
 
-# ---- 4. Model comparison ----
+  cat("\n--- Generating figures for", rate_label, "---\n")
 
-comp_long <- data.frame(
-  Model = rep(paste0("M", 1:7), 3),
-  Criterion = rep(c("AIC", "WAIC", "LOO-IC"), each = 7),
-  Value = c(comparison_tab$lavaan_AIC,
-            comparison_tab$WAIC,
-            comparison_tab$LOO),
-  stringsAsFactors = FALSE
-)
-comp_long$Criterion <- factor(comp_long$Criterion,
-                              levels = c("AIC", "WAIC", "LOO-IC"))
-comp_long <- do.call(rbind, lapply(split(comp_long, comp_long$Criterion),
-  function(d) { d$delta <- d$Value - min(d$Value, na.rm = TRUE); d }))
+  # ---- 1. Diagnostic plots (histograms, QQ, pairs) ----
 
-p_comp <- ggplot(comp_long, aes(x = Model, y = delta, fill = Criterion)) +
+  pdf(paste0("../figures/Fig_S_bayes_diagnostics_", metric, ".pdf"),
+      width = 10, height = 8, useDingbats = FALSE)
+  par(mfrow = c(2, 3))
+  for (i in seq_along(analysis_vars)) {
+    v <- dat[[analysis_vars[i]]]; v <- v[!is.na(v)]
+    hist(v, breaks = 15, probability = TRUE, main = var_labels[i],
+         xlab = analysis_vars[i], col = "grey85", border = "grey60")
+    curve(dnorm(x, mean(v), sd(v)), add = TRUE, col = "firebrick", lwd = 2)
+    rug(v)
+  }
+  par(mfrow = c(2, 3))
+  for (i in seq_along(analysis_vars)) {
+    v <- dat[[analysis_vars[i]]]; v <- v[!is.na(v)]
+    qqnorm(v, main = paste("QQ:", var_labels[i]), pch = 16, cex = 0.8)
+    qqline(v, col = "firebrick", lwd = 2)
+  }
+  pairs(dat[, analysis_vars], pch = 16, cex = 0.7,
+        col = c(cl = "#90d743", fl = "#3c1b4d", sm = "#f7e913")[dat$flight],
+        main = paste0("Pairwise scatterplots (", rate_label,
+                      ", coloured by flight category)"))
+  dev.off()
+  cat("Saved: ../figures/Fig_S_bayes_diagnostics_", metric, ".pdf\n")
+
+  # ---- 2. Trace plots for best model ----
+
+  mcmc_list <- blavInspect(bayes_fits[[best_idx]], "mcmc")
+  n_pars <- ncol(mcmc_list[[1]])
+  n_plot <- min(n_pars, 11)
+  n_cols <- 3
+  n_rows <- ceiling(n_plot / n_cols)
+  pdf(paste0("../figures/Fig_S_bayes_traceplots_", metric, ".pdf"),
+      width = 10, height = 1.3 * n_rows, useDingbats = FALSE)
+  par(mfrow = c(n_rows, n_cols), mar = c(2, 3, 1.5, 1))
+  for (p in seq_len(n_plot)) {
+    plot(mcmc_list[[1]][, p], type = "l", col = "steelblue",
+         main = colnames(mcmc_list[[1]])[p], ylab = "", xlab = "",
+         cex.main = 0.8)
+    lines(mcmc_list[[2]][, p], col = "coral")
+  }
+  dev.off()
+  cat("Saved: ../figures/Fig_S_bayes_traceplots_", metric, ".pdf\n")
+
+  # ---- 3. Forest plot of all model coefficients (one page per model) ----
+
+  pdf(paste0("../figures/Fig_bayes_forest_plot_", metric, ".pdf"),
+      width = 5.5, height = 5, useDingbats = FALSE)
+  for (mi in 1:7) {
+    if (is.null(bayes_fits[[mi]])) next
+    mi_paths <- extract_paths(bayes_fits[[mi]], model_names[mi])
+    mi_paths$label <- path_labels[mi_paths$path]
+    mi_paths <- mi_paths[!is.na(mi_paths$label), ]
+    mi_paths$label <- factor(mi_paths$label,
+                             levels = rev(path_labels[path_labels %in% mi_paths$label]))
+    mi_paths$equation <- ifelse(grepl(paste0(rate_var, "~"), mi_paths$path),
+                                "Rate acceleration",
+                         ifelse(grepl("logTotGenes_raw~", mi_paths$path),
+                                "Gene count", "Genome length"))
+    mi_paths$equation <- factor(mi_paths$equation,
+                                levels = c("Rate acceleration", "Gene count",
+                                           "Genome length"))
+    mi_paths$sig <- ifelse(mi_paths$p_dir >= 0.95, "Credible", "Uncertain")
+
+    best_tag <- if (mi == best_idx) " *" else ""
+    p_forest <- ggplot(mi_paths, aes(x = median, y = label, colour = sig)) +
+      geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+      geom_linerange(aes(xmin = ci_lo, xmax = ci_hi), linewidth = 0.5) +
+      geom_linerange(aes(xmin = q25, xmax = q75), linewidth = 1.5) +
+      geom_point(size = 2.5) +
+      scale_colour_manual(values = c(Credible = "firebrick", Uncertain = "grey50"),
+                          name = "95% CI") +
+      facet_grid(equation ~ ., scales = "free_y", space = "free_y") +
+      labs(x = "Posterior median (95% and 50% credible intervals)",
+           y = NULL,
+           title = paste0(model_names[mi], " (", rate_label, ")", best_tag)) +
+      theme_bw(base_size = 11) +
+      theme(strip.background = element_rect(fill = "grey95"),
+            panel.grid.major.y = element_blank(),
+            legend.position = "bottom")
+    print(p_forest)
+  }
+  dev.off()
+  cat("Saved: ../figures/Fig_bayes_forest_plot_", metric, ".pdf\n")
+
+  # ---- 4. Per-metric model comparison ----
+
+  comp_long <- data.frame(
+    Model = rep(paste0("M", 1:7), 3),
+    Criterion = rep(c("AIC", "WAIC", "LOO-IC"), each = 7),
+    Value = c(comparison_tab$lavaan_AIC,
+              comparison_tab$WAIC,
+              comparison_tab$LOO),
+    stringsAsFactors = FALSE
+  )
+  comp_long$Criterion <- factor(comp_long$Criterion,
+                                levels = c("AIC", "WAIC", "LOO-IC"))
+  comp_long <- do.call(rbind, lapply(split(comp_long, comp_long$Criterion),
+    function(d) { d$delta <- d$Value - min(d$Value, na.rm = TRUE); d }))
+
+  p_comp <- ggplot(comp_long, aes(x = Model, y = delta, fill = Criterion)) +
+    geom_col(position = position_dodge(width = 0.7), width = 0.6) +
+    scale_fill_manual(values = c(AIC = "grey60", WAIC = "steelblue",
+                                 `LOO-IC` = "firebrick")) +
+    labs(x = "Model", y = expression(Delta ~ "Information criterion (vs best)"),
+         title = paste0("Model comparison (", rate_label, ")")) +
+    theme_bw(base_size = 11) +
+    theme(legend.position = "bottom")
+
+  pdf(paste0("../figures/Fig_bayes_model_comparison_", metric, ".pdf"),
+      width = 7, height = 4, useDingbats = FALSE)
+  print(p_comp)
+  dev.off()
+  cat("Saved: ../figures/Fig_bayes_model_comparison_", metric, ".pdf\n")
+
+  # ---- 5. Key paths across all 7 models ----
+
+  all_model_paths <- data.frame()
+  for (i in 1:7) {
+    if (!is.null(bayes_fits[[i]])) {
+      all_model_paths <- rbind(all_model_paths,
+                               extract_paths(bayes_fits[[i]], paste0("M", i)))
+    }
+  }
+
+  ap_key <- all_model_paths[all_model_paths$path %in% key_paths, ]
+  ap_key$label <- key_labels[ap_key$path]
+  ap_key <- ap_key[!is.na(ap_key$label), ]
+  ap_key$label <- factor(ap_key$label, levels = rev(key_labels))
+  ap_key$model <- factor(ap_key$model, levels = paste0("M", 1:7))
+
+  p_multi <- ggplot(ap_key, aes(x = median, y = model, colour = p_dir >= 0.95)) +
+    geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+    geom_linerange(aes(xmin = ci_lo, xmax = ci_hi), linewidth = 0.4) +
+    geom_point(size = 1.8) +
+    scale_colour_manual(values = c(`TRUE` = "firebrick", `FALSE` = "grey50"),
+                        labels = c("Uncertain", "P(dir) \u2265 0.95"),
+                        name = "") +
+    facet_wrap(~ label, scales = "free_x", ncol = 2) +
+    labs(x = "Posterior median (95% CI)", y = "Model",
+         title = paste0("Key path coefficients across models (",
+                        rate_label, ")")) +
+    theme_bw(base_size = 10) +
+    theme(strip.background = element_rect(fill = "grey95"),
+          legend.position = "bottom",
+          panel.grid.major.y = element_blank())
+
+  pdf(paste0("../figures/Fig_bayes_paths_across_models_", metric, ".pdf"),
+      width = 8, height = 7, useDingbats = FALSE)
+  print(p_multi)
+  dev.off()
+  cat("Saved: ../figures/Fig_bayes_paths_across_models_", metric, ".pdf\n")
+
+  # ---- 6. Sensitivity: full vs trimmed posteriors (one page per model) ----
+
+  has_any_trim <- any(sapply(fits_trim, function(x) !is.null(x)))
+  if (has_any_trim) {
+    pdf(paste0("../figures/Fig_bayes_sensitivity_", metric, ".pdf"),
+        width = 8, height = 4.5, useDingbats = FALSE)
+    for (mi in 1:7) {
+      if (is.null(bayes_fits[[mi]]) || is.null(fits_trim[[mi]])) next
+      trim_paths <- extract_paths(fits_trim[[mi]], "Excluding outlier")
+      full_paths <- extract_paths(bayes_fits[[mi]], "Full dataset")
+      sens_df <- rbind(full_paths, trim_paths)
+      sens_df$label <- path_labels[sens_df$path]
+      sens_df <- sens_df[!is.na(sens_df$label), ]
+      sens_df$label <- factor(sens_df$label,
+                              levels = rev(path_labels[path_labels %in% sens_df$label]))
+      sens_df$model <- factor(sens_df$model,
+                              levels = c("Full dataset", "Excluding outlier"))
+
+      best_tag <- if (mi == best_idx) " *" else ""
+      p_sens <- ggplot(sens_df, aes(x = median, y = label, colour = model)) +
+        geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+        geom_linerange(aes(xmin = ci_lo, xmax = ci_hi),
+                       linewidth = 0.5,
+                       position = position_dodge(width = 0.5)) +
+        geom_point(size = 2,
+                   position = position_dodge(width = 0.5)) +
+        scale_colour_manual(values = c("Full dataset" = "firebrick",
+                                       "Excluding outlier" = "steelblue"),
+                            name = "") +
+        labs(x = "Posterior median (95% CI)", y = NULL,
+             title = paste0("Sensitivity: ", model_names[mi],
+                            " (", rate_label, ")", best_tag)) +
+        theme_bw(base_size = 11) +
+        theme(panel.grid.major.y = element_blank(),
+              legend.position = "bottom")
+      print(p_sens)
+    }
+    dev.off()
+    cat("Saved: ../figures/Fig_bayes_sensitivity_", metric, ".pdf\n")
+  } else {
+    cat("  No sensitivity fits for", rate_label, "-- skipping sensitivity plots\n")
+  }
+
+}  # end metric loop
+
+# ---- 7. Combined model comparison figure (all three metrics) ----
+
+cat("\n--- Generating combined model comparison figure ---\n")
+
+comp_all <- data.frame()
+for (metric in names(rate_metrics)) {
+  ct <- all_results[[metric]]$comparison_tab
+  comp_metric <- data.frame(
+    Model = rep(paste0("M", 1:7), 3),
+    Criterion = rep(c("AIC", "WAIC", "LOO-IC"), each = 7),
+    Value = c(ct$lavaan_AIC, ct$WAIC, ct$LOO),
+    Rate = rate_labels[metric],
+    stringsAsFactors = FALSE
+  )
+  comp_metric$Criterion <- factor(comp_metric$Criterion,
+                                  levels = c("AIC", "WAIC", "LOO-IC"))
+  # Compute delta within each criterion for this metric
+  comp_metric <- do.call(rbind, lapply(
+    split(comp_metric, comp_metric$Criterion),
+    function(d) { d$delta <- d$Value - min(d$Value, na.rm = TRUE); d }
+  ))
+  comp_all <- rbind(comp_all, comp_metric)
+}
+comp_all$Rate <- factor(comp_all$Rate, levels = c("dS", "dN", "dN/dS"))
+
+p_comp_all <- ggplot(comp_all, aes(x = Model, y = delta, fill = Criterion)) +
   geom_col(position = position_dodge(width = 0.7), width = 0.6) +
   scale_fill_manual(values = c(AIC = "grey60", WAIC = "steelblue",
                                `LOO-IC` = "firebrick")) +
-  labs(x = "Model", y = expression(Delta ~ "Information criterion (vs best)"),
-       title = "Model comparison: frequentist AIC vs Bayesian WAIC and LOO-IC") +
+  facet_wrap(~ Rate, ncol = 3) +
+  labs(x = "Model",
+       y = expression(Delta ~ "Information criterion (vs best)"),
+       title = "Model comparison across rate metrics") +
   theme_bw(base_size = 11) +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom",
+        strip.background = element_rect(fill = "grey95"))
 
-pdf("../figures/Fig_bayes_model_comparison.pdf", width = 7, height = 4,
-    useDingbats = FALSE)
-print(p_comp)
+pdf("../figures/Fig_bayes_model_comparison_all.pdf",
+    width = 12, height = 4, useDingbats = FALSE)
+print(p_comp_all)
 dev.off()
-cat("Saved: ../figures/Fig_bayes_model_comparison.pdf\n")
+cat("Saved: ../figures/Fig_bayes_model_comparison_all.pdf\n")
 
-# ---- 5. Key paths across all 7 models ----
+# ---- 8. Combined forest plot: best LOO-IC model per metric ----
 
-all_paths <- data.frame()
-for (i in 1:7) {
-  if (!is.null(bayes_fits[[i]])) {
-    all_paths <- rbind(all_paths, extract_paths(bayes_fits[[i]], paste0("M", i)))
-  }
+cat("\n--- Generating combined forest plot (best LOO-IC models) ---\n")
+
+# Generic path labels (no metric name — colour encodes that)
+generic_labels <- c(
+  "rate~flight"              = "Flight habit \u2192 Rate accel.",
+  "rate~masdif"              = "Body mass diff. \u2192 Rate accel.",
+  "logTotGenes_raw~rate"     = "Rate accel. \u2192 Gene count",
+  "logTotGenes_raw~flight"   = "Flight habit \u2192 Gene count",
+  "logTotGenes_raw~masdif"   = "Body mass diff. \u2192 Gene count",
+  "logTotGenes_raw~logBUSCO" = "BUSCO completeness \u2192 Gene count",
+  "logTotLen_raw~rate"       = "Rate accel. \u2192 Genome length",
+  "logTotLen_raw~logTotGenes_raw" = "Gene count \u2192 Genome length",
+  "logTotLen_raw~flight"     = "Flight habit \u2192 Genome length",
+  "logTotLen_raw~masdif"     = "Body mass diff. \u2192 Genome length",
+  "logTotLen_raw~logBUSCO"   = "BUSCO completeness \u2192 Genome length"
+)
+
+combined_df <- data.frame()
+for (metric in names(rate_metrics)) {
+  res <- all_results[[metric]]
+  rate_var <- rate_metrics[metric]
+  rate_label <- rate_labels[metric]
+  ct <- res$comparison_tab
+
+  # Best model by LOO-IC
+  best_loo <- which.min(ct$LOO)
+  fit <- res$bayes_fits[[best_loo]]
+  if (is.null(fit)) next
+
+  cat("  ", rate_label, ": best LOO-IC = Model", best_loo,
+      "(", res$model_names[best_loo], ")\n")
+
+  paths_df <- extract_paths(fit, rate_label)
+
+  # Map metric-specific path names to generic labels
+  paths_df$generic <- paths_df$path
+  paths_df$generic <- gsub(rate_var, "rate", paths_df$generic)
+  paths_df$label <- generic_labels[paths_df$generic]
+  paths_df <- paths_df[!is.na(paths_df$label), ]
+
+  paths_df$equation <- ifelse(grepl("^rate~", paths_df$generic),
+                              "Rate acceleration",
+                       ifelse(grepl("^logTotGenes_raw~", paths_df$generic),
+                              "Gene count", "Genome length"))
+  paths_df$metric <- rate_label
+  paths_df$credible <- paths_df$p_dir >= 0.95
+  combined_df <- rbind(combined_df, paths_df)
 }
 
-key_paths <- c(
-  "propAccelDnds~flight", "propAccelDnds~masdif",
-  "logTotGenes_raw~propAccelDnds", "logTotGenes_raw~flight",
-  "logTotLen_raw~logTotGenes_raw", "logTotLen_raw~flight",
-  "logTotLen_raw~propAccelDnds"
+combined_df$label <- factor(combined_df$label,
+                            levels = rev(generic_labels[generic_labels %in%
+                                                          combined_df$label]))
+combined_df$equation <- factor(combined_df$equation,
+                               levels = c("Rate acceleration", "Gene count",
+                                          "Genome length"))
+combined_df$metric <- factor(combined_df$metric, levels = c("dS", "dN", "dN/dS"))
+
+# Colour: metric x credibility (saturated = credible, pale = uncertain)
+# Dodge order: dS first (top), then dN, then omega (dN/dS) at bottom
+colour_map <- c(
+  "dS.TRUE"    = "#2166ac",  "dS.FALSE"    = "#92c5de",
+  "dN.TRUE"    = "#1b7837",  "dN.FALSE"    = "#a6d96a",
+  "dN/dS.TRUE" = "#b2182b",  "dN/dS.FALSE" = "#f4a582"
 )
-key_labels <- c(
-  "propAccelDnds~flight"          = "Flight \u2192 Rate accel.",
-  "propAccelDnds~masdif"          = "Mass diff. \u2192 Rate accel.",
-  "logTotGenes_raw~propAccelDnds" = "Rate accel. \u2192 Gene count",
-  "logTotGenes_raw~flight"        = "Flight \u2192 Gene count",
-  "logTotLen_raw~logTotGenes_raw" = "Gene count \u2192 Genome length",
-  "logTotLen_raw~flight"          = "Flight \u2192 Genome length",
-  "logTotLen_raw~propAccelDnds"   = "Rate accel. \u2192 Genome length"
+combined_df$colour_key <- factor(
+  paste0(combined_df$metric, ".", combined_df$credible),
+  levels = c("dS.TRUE", "dS.FALSE",
+             "dN.TRUE", "dN.FALSE",
+             "dN/dS.TRUE", "dN/dS.FALSE")
 )
 
-ap_key <- all_paths[all_paths$path %in% key_paths, ]
-ap_key$label <- key_labels[ap_key$path]
-ap_key$label <- factor(ap_key$label, levels = rev(key_labels))
-ap_key$model <- factor(ap_key$model, levels = paste0("M", 1:7))
+# Legend: saturated = P(dir) >= 0.95, pale = P(dir) < 0.95
+colour_breaks <- c("dS.TRUE", "dS.FALSE",
+                    "dN.TRUE", "dN.FALSE",
+                    "dN/dS.TRUE", "dN/dS.FALSE")
+colour_exprs <- c(
+  expression(d[S]~"\u2265 0.95"),  expression(d[S]~"< 0.95"),
+  expression(d[N]~"\u2265 0.95"),  expression(d[N]~"< 0.95"),
+  expression(italic(omega)~"\u2265 0.95"), expression(italic(omega)~"< 0.95")
+)
 
-p_multi <- ggplot(ap_key, aes(x = median, y = model, colour = p_dir >= 0.95)) +
+p_combined <- ggplot(combined_df,
+                     aes(x = median, y = label, colour = colour_key)) +
   geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
-  geom_linerange(aes(xmin = ci_lo, xmax = ci_hi), linewidth = 0.4) +
-  geom_point(size = 1.8) +
-  scale_colour_manual(values = c(`TRUE` = "firebrick", `FALSE` = "grey50"),
-                      labels = c("Uncertain", "P(dir) \u2265 0.95"),
-                      name = "") +
-  facet_wrap(~ label, scales = "free_x", ncol = 2) +
-  labs(x = "Posterior median (95% CI)", y = "Model",
-       title = "Key path coefficients across all 7 competing models") +
+  geom_linerange(aes(xmin = ci_lo, xmax = ci_hi), linewidth = 0.4,
+                 position = position_dodge(width = 0.6)) +
+  geom_linerange(aes(xmin = q25, xmax = q75), linewidth = 1.3,
+                 position = position_dodge(width = 0.6)) +
+  geom_point(size = 2, position = position_dodge(width = 0.6)) +
+  scale_colour_manual(values = colour_map,
+                      breaks = colour_breaks,
+                      labels = colour_exprs,
+                      name = "P(direction)") +
+  facet_grid(equation ~ ., scales = "free_y", space = "free_y") +
+  labs(x = "Posterior median (95% and 50% credible intervals)",
+       y = NULL,
+       title = "Best models by LOO-IC across rate metrics") +
   theme_bw(base_size = 10) +
   theme(strip.background = element_rect(fill = "grey95"),
+        panel.grid.major.y = element_blank(),
         legend.position = "bottom",
-        panel.grid.major.y = element_blank())
+        legend.key.size = unit(0.8, "lines"),
+        plot.title = element_text(size = 11)) +
+  guides(colour = guide_legend(nrow = 2, byrow = TRUE))
 
-pdf("../figures/Fig_bayes_paths_across_models.pdf", width = 8, height = 7,
-    useDingbats = FALSE)
-print(p_multi)
+pdf("../figures/Fig_bayes_forest_combined.pdf",
+    width = 5, height = 6, useDingbats = FALSE)
+print(p_combined)
 dev.off()
-cat("Saved: ../figures/Fig_bayes_paths_across_models.pdf\n")
-
-# ---- 6. Sensitivity: full vs trimmed posteriors ----
-
-trim_paths <- extract_paths(fit_trim, "Excluding outlier")
-full_paths <- extract_paths(bayes_fits[[best_idx]], "Full dataset")
-sens_df <- rbind(full_paths, trim_paths)
-sens_df$label <- path_labels[sens_df$path]
-sens_df$label <- factor(sens_df$label, levels = rev(path_labels))
-sens_df$model <- factor(sens_df$model,
-                        levels = c("Full dataset", "Excluding outlier"))
-
-p_sens <- ggplot(sens_df, aes(x = median, y = label, colour = model)) +
-  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
-  geom_linerange(aes(xmin = ci_lo, xmax = ci_hi),
-                 linewidth = 0.5,
-                 position = position_dodge(width = 0.5)) +
-  geom_point(size = 2,
-             position = position_dodge(width = 0.5)) +
-  scale_colour_manual(values = c("Full dataset" = "firebrick",
-                                 "Excluding outlier" = "steelblue"),
-                      name = "") +
-  labs(x = "Posterior median (95% CI)", y = NULL,
-       title = "Sensitivity: effect of excluding influential pair (ATLROG-HELFUL)") +
-  theme_bw(base_size = 11) +
-  theme(panel.grid.major.y = element_blank(),
-        legend.position = "bottom")
-
-pdf("../figures/Fig_bayes_sensitivity.pdf", width = 8, height = 4.5,
-    useDingbats = FALSE)
-print(p_sens)
-dev.off()
-cat("Saved: ../figures/Fig_bayes_sensitivity.pdf\n")
+cat("Saved: ../figures/Fig_bayes_forest_combined.pdf\n")
 
 cat("\nAll figures generated.\n")

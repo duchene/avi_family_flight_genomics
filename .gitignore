@@ -1,0 +1,4 @@
+# Large generated data files (reproduce via scripts 15-16)
+data/bayesian_path_results.Rdata
+data/bayesian_path_sensitivity.Rdata
+.DS_Store

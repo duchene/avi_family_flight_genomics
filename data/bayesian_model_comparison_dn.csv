@@ -1,0 +1,8 @@
+"Model","lavaan_AIC","lavaan_dAIC","WAIC","LOO","converged","dWAIC","dLOO"
+"1: Flight -> rates",-280.2,0.9,-277.5,-276.5,TRUE,0.8,0.7
+"2: Flight -> genome -> rates",-271.2,10,-268.3,-267.4,TRUE,10,9.8
+"3: Flight -> rates & genes",-280.6,0.5,-277.5,-276.5,TRUE,0.8,0.7
+"4: Flight -> genome only",-271,10.2,-268.2,-266.6,TRUE,10.1,10.6
+"5: Flight -> rates & genome",-279.2,2,-276,-275,TRUE,2.3,2.2
+"6: Flight -> rates; rates+genes+flight -> genome",-279.2,2,-275.7,-274.8,TRUE,2.6,2.4
+"7: Flight -> rates; rates+genes -> genome",-281.2,0,-278.3,-277.2,TRUE,0,0

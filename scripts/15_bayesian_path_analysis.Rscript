@@ -4,6 +4,9 @@
 # Replicates the 7 competing models from the manuscript (Table 1) in a
 # Bayesian framework, using raw (uncorrected) genomic ratios and BUSCO as
 # an explicit covariate rather than a pre-correction.
+#
+# Runs the full 7-model comparison for three rate metrics:
+#   dN/dS, dN, and dS (propAccelDnds, propAccelDn, propAccelDs).
 
 library(blavaan)
 library(lavaan)
@@ -25,17 +28,12 @@ dat <- genomecomps[-24, ]
 cat("Data dimensions:", nrow(dat), "sister pairs x", ncol(dat), "variables\n")
 cat("Flight categories:", table(dat$flight), "\n\n")
 
-# ---- 2. Pre-fitting diagnostics ----
+# ---- Rate metrics to analyse ----
 
-analysis_vars <- c("propAccelDnds", "logTotGenes_raw", "logTotLen_raw",
-                    "masdif", "logBUSCO")
-var_labels <- c("propAccel(dN/dS)", "log(gene count ratio)",
-                "log(genome length ratio)", "log(body mass ratio)",
-                "log(BUSCO ratio)")
+rate_metrics <- c(dnds = "propAccelDnds", dn = "propAccelDn", ds = "propAccelDs")
+rate_labels <- c(dnds = "dN/dS", dn = "dN", ds = "dS")
 
-# --- 2a. Distributional summary ---
-
-cat("=== Distributional diagnostics ===\n\n")
+# ---- Helper functions ----
 
 skew <- function(x) {
   x <- x[!is.na(x)]; n <- length(x); m <- mean(x); s <- sd(x)
@@ -47,457 +45,495 @@ kurt <- function(x) {
     (3*(n-1)^2) / ((n-2)*(n-3))
 }
 
-diag_tab <- data.frame(
-  Variable = var_labels,
-  N = NA_integer_, NAs = NA_integer_,
-  Mean = NA_real_, SD = NA_real_,
-  Skewness = NA_real_, Kurtosis = NA_real_,
-  Shapiro_W = NA_real_, Shapiro_p = NA_real_,
-  N_outliers_3SD = NA_integer_,
-  stringsAsFactors = FALSE
-)
-
-for (i in seq_along(analysis_vars)) {
-  v <- dat[[analysis_vars[i]]]
-  v_clean <- v[!is.na(v)]
-  sw <- shapiro.test(v_clean)
-  diag_tab$N[i] <- length(v_clean)
-  diag_tab$NAs[i] <- sum(is.na(v))
-  diag_tab$Mean[i] <- round(mean(v_clean), 4)
-  diag_tab$SD[i] <- round(sd(v_clean), 4)
-  diag_tab$Skewness[i] <- round(skew(v_clean), 3)
-  diag_tab$Kurtosis[i] <- round(kurt(v_clean), 3)
-  diag_tab$Shapiro_W[i] <- round(sw$statistic, 4)
-  diag_tab$Shapiro_p[i] <- round(sw$p.value, 4)
-  diag_tab$N_outliers_3SD[i] <- sum(abs(scale(v_clean)) > 3)
-}
-
-print(diag_tab)
-cat("\nInterpretation thresholds:\n")
-cat("  Skewness: |skew| > 1 problematic; > 2 severe\n")
-cat("  Excess kurtosis: |kurt| > 2 heavy/light tails\n")
-cat("  Shapiro-Wilk: p < 0.05 rejects normality\n\n")
-
-for (i in seq_along(analysis_vars)) {
-  issues <- character()
-  if (abs(diag_tab$Skewness[i]) > 1) issues <- c(issues, "skewed")
-  if (abs(diag_tab$Kurtosis[i]) > 2) issues <- c(issues, "excess kurtosis")
-  if (diag_tab$Shapiro_p[i] < 0.05) issues <- c(issues, "non-normal")
-  if (diag_tab$N_outliers_3SD[i] > 0)
-    issues <- c(issues, paste0(diag_tab$N_outliers_3SD[i], " outlier(s)"))
-  if (length(issues) > 0)
-    cat("  NOTE:", var_labels[i], "--", paste(issues, collapse = ", "), "\n")
-}
-
-# --- 2b. Boundary and range checks ---
-
-prop_raw <- dat$propAccelDnds + 0.5
-cat("\n  propAccelDnds (original [0,1] scale): range =",
-    round(range(prop_raw, na.rm = TRUE), 3), "\n")
-if (any(prop_raw < 0.1 | prop_raw > 0.9, na.rm = TRUE)) {
-  cat("    Values near boundaries -- consider logit transform\n")
-} else {
-  cat("    No boundary effects -- linear scale adequate\n")
-}
-
-cat("  logBUSCO: range =", round(range(dat$logBUSCO, na.rm = TRUE), 4),
-    "  SD =", round(sd(dat$logBUSCO, na.rm = TRUE), 4), "\n")
-if (sd(dat$logBUSCO, na.rm = TRUE) < 0.05) {
-  cat("    WARNING: very low variance -- limited covariate power\n")
-} else {
-  cat("    Sufficient variance for covariate\n")
-}
-
-# --- 2c. Multicollinearity ---
-
-cat("\n=== Multicollinearity ===\n\n")
-cor_mat <- cor(dat[, analysis_vars], use = "pairwise.complete")
-cat("Pairwise Pearson correlations:\n")
-print(round(cor_mat, 3))
-
-high_cor <- which(abs(cor_mat) > 0.7 & upper.tri(cor_mat), arr.ind = TRUE)
-if (nrow(high_cor) > 0) {
-  cat("\nWARNING: |r| > 0.7:\n")
-  for (j in seq_len(nrow(high_cor)))
-    cat("  ", analysis_vars[high_cor[j, 1]], "--",
-        analysis_vars[high_cor[j, 2]], ":",
-        round(cor_mat[high_cor[j, 1], high_cor[j, 2]], 3), "\n")
-} else {
-  cat("\nNo pairwise |r| > 0.7 among continuous predictors\n")
-}
-
-# --- 2d. Influential observations ---
-
-cat("\n=== Influential observations (Mahalanobis, df=5, alpha=0.01) ===\n")
-cc <- complete.cases(dat[, analysis_vars])
-mah <- mahalanobis(dat[cc, analysis_vars],
-                   colMeans(dat[cc, analysis_vars]),
-                   cov(dat[cc, analysis_vars]))
-chi_crit <- qchisq(0.99, df = length(analysis_vars))
-influential_idx <- which(mah > chi_crit)
-influential_names <- rownames(dat[cc, ])[influential_idx]
-if (length(influential_idx) > 0) {
-  for (idx in influential_idx)
-    cat("  ", rownames(dat[cc, ])[idx], ": D2 =", round(mah[idx], 2), "\n")
-} else {
-  cat("  None\n")
-  influential_names <- character(0)
-}
-
-# --- 2e. Prior review ---
-
-cat("=== Default blavaan priors (target = 'stan') ===\n")
-cat("  Regression coefficients: normal(0, 10)\n")
-cat("  Residual SD: student_t(3, 0, 2.5) [half-t]\n")
-cat("  With N=41, these are weakly informative for most variables.\n\n")
-
-# ---- 3. Model definitions ----
-# Each model specifies a different causal structure (Table 1 in manuscript).
-# BUSCO added to gene-count and genome-length equations as quality covariate.
-# NOT added to the dN/dS equation (codeml rates are assembly-independent).
-
-models <- list()
-
-models[[1]] <- '
-propAccelDnds ~ 0 + flight + masdif
-logTotGenes_raw ~ 0 + propAccelDnds + masdif + logBUSCO
-logTotLen_raw ~ 0 + logTotGenes_raw + masdif + logBUSCO'
-
-models[[2]] <- '
-propAccelDnds ~ 0 + masdif + logTotGenes_raw
-logTotGenes_raw ~ 0 + flight + masdif + logBUSCO
-logTotLen_raw ~ 0 + flight + logTotGenes_raw + masdif + logBUSCO'
-
-models[[3]] <- '
-propAccelDnds ~ 0 + flight + masdif
-logTotGenes_raw ~ 0 + flight + masdif + logBUSCO
-logTotLen_raw ~ 0 + logTotGenes_raw + masdif + logBUSCO'
-
-models[[4]] <- '
-propAccelDnds ~ 0 + masdif
-logTotGenes_raw ~ 0 + flight + masdif + logBUSCO
-logTotLen_raw ~ 0 + logTotGenes_raw + flight + masdif + logBUSCO'
-
-models[[5]] <- '
-propAccelDnds ~ 0 + flight + masdif
-logTotGenes_raw ~ 0 + flight + masdif + logBUSCO
-logTotLen_raw ~ 0 + flight + logTotGenes_raw + masdif + logBUSCO'
-
-models[[6]] <- '
-propAccelDnds ~ 0 + flight + masdif
-logTotGenes_raw ~ 0 + flight + masdif + logBUSCO
-logTotLen_raw ~ 0 + flight + propAccelDnds + logTotGenes_raw + masdif + logBUSCO'
-
-models[[7]] <- '
-propAccelDnds ~ 0 + flight + masdif
-logTotGenes_raw ~ 0 + flight + masdif + logBUSCO
-logTotLen_raw ~ 0 + propAccelDnds + logTotGenes_raw + masdif + logBUSCO'
-
-model_names <- c(
-  "1: Flight -> rates",
-  "2: Flight -> genome -> rates",
-  "3: Flight -> rates & genes",
-  "4: Flight -> genome only",
-  "5: Flight -> rates & genome",
-  "6: Flight -> rates; rates+genes+flight -> genome",
-  "7: Flight -> rates; rates+genes -> genome"
-)
-
-# ---- 4. Frequentist lavaan reference fits ----
-
-cat("=== Frequentist lavaan AIC comparison ===\n")
-lavaan_fits <- list()
-lavaan_aics <- numeric(7)
-for (i in 1:7) {
-  lavaan_fits[[i]] <- suppressWarnings(cfa(models[[i]], data = dat))
-  lavaan_aics[i] <- AIC(lavaan_fits[[i]])
-}
-aic_tab <- data.frame(
-  Model = model_names,
-  AIC = round(lavaan_aics, 1),
-  dAIC = round(lavaan_aics - min(lavaan_aics), 1),
-  n_free = sapply(lavaan_fits, function(f) f@Fit@npar)
-)
-print(aic_tab[order(aic_tab$AIC), ])
-
-cat("\nSample size adequacy (N =", nrow(dat), "):\n")
-for (i in 1:7) {
-  ratio <- round(nrow(dat) / aic_tab$n_free[i], 1)
-  flag <- ifelse(ratio < 5, " WARNING: < 5", "")
-  cat("  Model", i, ":", aic_tab$n_free[i], "free params, N/p =", ratio, flag, "\n")
-}
-cat("\n")
-
-# ---- 5. Fit Bayesian path models ----
-
-cat("Fitting 7 Bayesian path models...\n")
-cat("MCMC: 2 chains, 1000 warmup, 2000 sampling each\n\n")
-
 # Note: bsem() does not support do.call(); direct calls required.
 fit_bsem <- function(mod, dat) {
   bsem(mod, data = dat, n.chains = 2, burnin = 1000, sample = 2000, seed = 42)
 }
 
-bayes_fits <- list()
-for (i in 1:7) {
-  cat("--- Fitting Model", i, "---\n")
-  t0 <- Sys.time()
-  bayes_fits[[i]] <- tryCatch(
-    fit_bsem(models[[i]], dat),
-    error = function(e) {
-      cat("  Error:", conditionMessage(e), "\n")
-      return(NULL)
-    }
+# ---- Generate 7 model strings for a given rate variable ----
+
+make_models <- function(rate_var) {
+  # Template models use propAccelDnds; substitute the actual rate variable
+  templates <- list(
+    '
+propAccelDnds ~ 0 + flight + masdif
+logTotGenes_raw ~ 0 + propAccelDnds + masdif + logBUSCO
+logTotLen_raw ~ 0 + logTotGenes_raw + masdif + logBUSCO',
+    '
+propAccelDnds ~ 0 + masdif + logTotGenes_raw
+logTotGenes_raw ~ 0 + flight + masdif + logBUSCO
+logTotLen_raw ~ 0 + flight + logTotGenes_raw + masdif + logBUSCO',
+    '
+propAccelDnds ~ 0 + flight + masdif
+logTotGenes_raw ~ 0 + flight + masdif + logBUSCO
+logTotLen_raw ~ 0 + logTotGenes_raw + masdif + logBUSCO',
+    '
+propAccelDnds ~ 0 + masdif
+logTotGenes_raw ~ 0 + flight + masdif + logBUSCO
+logTotLen_raw ~ 0 + logTotGenes_raw + flight + masdif + logBUSCO',
+    '
+propAccelDnds ~ 0 + flight + masdif
+logTotGenes_raw ~ 0 + flight + masdif + logBUSCO
+logTotLen_raw ~ 0 + flight + logTotGenes_raw + masdif + logBUSCO',
+    '
+propAccelDnds ~ 0 + flight + masdif
+logTotGenes_raw ~ 0 + flight + masdif + logBUSCO
+logTotLen_raw ~ 0 + flight + propAccelDnds + logTotGenes_raw + masdif + logBUSCO',
+    '
+propAccelDnds ~ 0 + flight + masdif
+logTotGenes_raw ~ 0 + flight + masdif + logBUSCO
+logTotLen_raw ~ 0 + propAccelDnds + logTotGenes_raw + masdif + logBUSCO'
   )
-  elapsed <- round(difftime(Sys.time(), t0, units = "mins"), 1)
-  cat("  Completed in", elapsed, "minutes\n")
+  lapply(templates, function(m) gsub("propAccelDnds", rate_var, m))
 }
 
-# ---- 6. Convergence diagnostics ----
+# ---- Run full analysis for one rate metric ----
 
-cat("\n=== MCMC convergence diagnostics ===\n\n")
+run_metric_analysis <- function(rate_var, rate_label, dat) {
 
-convergence_ok <- logical(7)
+  cat("\n", paste(rep("=", 72), collapse = ""), "\n")
+  cat("  RATE METRIC:", rate_label, "(", rate_var, ")\n")
+  cat(paste(rep("=", 72), collapse = ""), "\n\n")
 
-for (i in 1:7) {
-  if (is.null(bayes_fits[[i]])) {
-    cat("Model", i, ": FAILED TO FIT\n\n")
-    next
+  # -- Analysis variables for this metric --
+  analysis_vars <- c(rate_var, "logTotGenes_raw", "logTotLen_raw",
+                      "masdif", "logBUSCO")
+  var_labels <- c(paste0("propAccel(", rate_label, ")"),
+                  "log(gene count ratio)",
+                  "log(genome length ratio)", "log(body mass ratio)",
+                  "log(BUSCO ratio)")
+
+  # -- 2. Pre-fitting diagnostics --
+
+  # --- 2a. Distributional summary ---
+  cat("=== Distributional diagnostics ===\n\n")
+
+  diag_tab <- data.frame(
+    Variable = var_labels,
+    N = NA_integer_, NAs = NA_integer_,
+    Mean = NA_real_, SD = NA_real_,
+    Skewness = NA_real_, Kurtosis = NA_real_,
+    Shapiro_W = NA_real_, Shapiro_p = NA_real_,
+    N_outliers_3SD = NA_integer_,
+    stringsAsFactors = FALSE
+  )
+
+  for (i in seq_along(analysis_vars)) {
+    v <- dat[[analysis_vars[i]]]
+    v_clean <- v[!is.na(v)]
+    sw <- shapiro.test(v_clean)
+    diag_tab$N[i] <- length(v_clean)
+    diag_tab$NAs[i] <- sum(is.na(v))
+    diag_tab$Mean[i] <- round(mean(v_clean), 4)
+    diag_tab$SD[i] <- round(sd(v_clean), 4)
+    diag_tab$Skewness[i] <- round(skew(v_clean), 3)
+    diag_tab$Kurtosis[i] <- round(kurt(v_clean), 3)
+    diag_tab$Shapiro_W[i] <- round(sw$statistic, 4)
+    diag_tab$Shapiro_p[i] <- round(sw$p.value, 4)
+    diag_tab$N_outliers_3SD[i] <- sum(abs(scale(v_clean)) > 3)
   }
 
-  cat("--- Model", i, "---\n")
+  print(diag_tab)
+  cat("\nInterpretation thresholds:\n")
+  cat("  Skewness: |skew| > 1 problematic; > 2 severe\n")
+  cat("  Excess kurtosis: |kurt| > 2 heavy/light tails\n")
+  cat("  Shapiro-Wilk: p < 0.05 rejects normality\n\n")
 
-  # Rhat (should be < 1.01)
-  rhats <- blavInspect(bayes_fits[[i]], "rhat")
-  cat("  Rhat:  max =", round(max(rhats, na.rm = TRUE), 4),
-      " min =", round(min(rhats, na.rm = TRUE), 4), "\n")
-  rhat_ok <- all(rhats < 1.01, na.rm = TRUE)
-  if (!rhat_ok) {
-    cat("  WARNING: Rhat > 1.01 for",
-        sum(rhats > 1.01, na.rm = TRUE), "parameters\n")
+  for (i in seq_along(analysis_vars)) {
+    issues <- character()
+    if (abs(diag_tab$Skewness[i]) > 1) issues <- c(issues, "skewed")
+    if (abs(diag_tab$Kurtosis[i]) > 2) issues <- c(issues, "excess kurtosis")
+    if (diag_tab$Shapiro_p[i] < 0.05) issues <- c(issues, "non-normal")
+    if (diag_tab$N_outliers_3SD[i] > 0)
+      issues <- c(issues, paste0(diag_tab$N_outliers_3SD[i], " outlier(s)"))
+    if (length(issues) > 0)
+      cat("  NOTE:", var_labels[i], "--", paste(issues, collapse = ", "), "\n")
+  }
+
+  # --- 2b. Boundary and range checks ---
+  prop_raw <- dat[[rate_var]] + 0.5
+  cat("\n  ", rate_var, "(original [0,1] scale): range =",
+      round(range(prop_raw, na.rm = TRUE), 3), "\n")
+  if (any(prop_raw < 0.1 | prop_raw > 0.9, na.rm = TRUE)) {
+    cat("    Values near boundaries -- consider logit transform\n")
   } else {
-    cat("  All Rhat < 1.01 (converged)\n")
+    cat("    No boundary effects -- linear scale adequate\n")
   }
 
-  # Effective sample size (should be > 400)
-  neffs <- blavInspect(bayes_fits[[i]], "neff")
-  cat("  ESS:   min =", round(min(neffs, na.rm = TRUE)),
-      " median =", round(median(neffs, na.rm = TRUE)), "\n")
-  ess_ok <- all(neffs >= 400, na.rm = TRUE)
-  if (!ess_ok) {
-    cat("  WARNING: ESS < 400 for",
-        sum(neffs < 400, na.rm = TRUE), "parameters\n")
+  cat("  logBUSCO: range =", round(range(dat$logBUSCO, na.rm = TRUE), 4),
+      "  SD =", round(sd(dat$logBUSCO, na.rm = TRUE), 4), "\n")
+  if (sd(dat$logBUSCO, na.rm = TRUE) < 0.05) {
+    cat("    WARNING: very low variance -- limited covariate power\n")
   } else {
-    cat("  All ESS >= 400 (adequate)\n")
+    cat("    Sufficient variance for covariate\n")
   }
 
-  # Divergent transitions (Stan-specific; should be 0)
-  n_divergent <- 0
-  tryCatch({
-    stan_fit <- blavInspect(bayes_fits[[i]], "mcobj")
-    if (inherits(stan_fit, "stanfit")) {
-      sampler_params <- rstan::get_sampler_params(stan_fit, inc_warmup = FALSE)
-      n_divergent <- sum(sapply(sampler_params,
-                                function(x) sum(x[, "divergent__"])))
-    }
-  }, error = function(e) NULL)
-  cat("  Divergent transitions:", n_divergent, "\n")
-  if (n_divergent > 0)
-    cat("  WARNING: consider increasing adapt_delta\n")
+  # --- 2c. Multicollinearity ---
+  cat("\n=== Multicollinearity ===\n\n")
+  cor_mat <- cor(dat[, analysis_vars], use = "pairwise.complete")
+  cat("Pairwise Pearson correlations:\n")
+  print(round(cor_mat, 3))
 
-  convergence_ok[i] <- rhat_ok & ess_ok & (n_divergent == 0)
-  cat("  Overall:", ifelse(convergence_ok[i], "PASSED", "CHECK NEEDED"), "\n\n")
-}
-
-# ---- 7. Model comparison ----
-
-cat("=== Bayesian model comparison ===\n\n")
-
-comparison_tab <- data.frame(
-  Model = model_names,
-  lavaan_AIC = round(lavaan_aics, 1),
-  lavaan_dAIC = round(lavaan_aics - min(lavaan_aics), 1),
-  WAIC = NA_real_,
-  LOO = NA_real_,
-  converged = convergence_ok,
-  stringsAsFactors = FALSE
-)
-
-for (i in 1:7) {
-  if (!is.null(bayes_fits[[i]])) {
-    tryCatch({
-      fm <- fitMeasures(bayes_fits[[i]])
-      if ("waic" %in% names(fm)) comparison_tab$WAIC[i] <- round(fm["waic"], 1)
-      if ("looic" %in% names(fm)) comparison_tab$LOO[i] <- round(fm["looic"], 1)
-    }, error = function(e) {
-      cat("  fitMeasures error for model", i, ":", conditionMessage(e), "\n")
-    })
+  high_cor <- which(abs(cor_mat) > 0.7 & upper.tri(cor_mat), arr.ind = TRUE)
+  if (nrow(high_cor) > 0) {
+    cat("\nWARNING: |r| > 0.7:\n")
+    for (j in seq_len(nrow(high_cor)))
+      cat("  ", analysis_vars[high_cor[j, 1]], "--",
+          analysis_vars[high_cor[j, 2]], ":",
+          round(cor_mat[high_cor[j, 1], high_cor[j, 2]], 3), "\n")
+  } else {
+    cat("\nNo pairwise |r| > 0.7 among continuous predictors\n")
   }
-}
 
-if (any(!is.na(comparison_tab$WAIC)))
-  comparison_tab$dWAIC <- round(comparison_tab$WAIC -
-                                  min(comparison_tab$WAIC, na.rm = TRUE), 1)
-if (any(!is.na(comparison_tab$LOO)))
-  comparison_tab$dLOO <- round(comparison_tab$LOO -
-                                 min(comparison_tab$LOO, na.rm = TRUE), 1)
-
-cat("Model comparison table:\n")
-print(comparison_tab[order(comparison_tab$lavaan_AIC), ])
-
-# Pairwise comparison of best two models by LOO
-if (any(!is.na(comparison_tab$LOO))) {
-  loo_order <- order(comparison_tab$LOO, na.last = TRUE)
-  best_loo <- loo_order[1]
-  second_loo <- loo_order[2]
-  if (!is.null(bayes_fits[[best_loo]]) & !is.null(bayes_fits[[second_loo]])) {
-    cat("\n--- Pairwise: Model", best_loo, "vs Model", second_loo, "---\n")
-    tryCatch(print(blavCompare(bayes_fits[[best_loo]],
-                               bayes_fits[[second_loo]])),
-             error = function(e) cat("  blavCompare error:", e$message, "\n"))
+  # --- 2d. Influential observations ---
+  cat("\n=== Influential observations (Mahalanobis, df=5, alpha=0.01) ===\n")
+  cc <- complete.cases(dat[, analysis_vars])
+  mah <- mahalanobis(dat[cc, analysis_vars],
+                     colMeans(dat[cc, analysis_vars]),
+                     cov(dat[cc, analysis_vars]))
+  chi_crit <- qchisq(0.99, df = length(analysis_vars))
+  influential_idx <- which(mah > chi_crit)
+  influential_names <- rownames(dat[cc, ])[influential_idx]
+  if (length(influential_idx) > 0) {
+    for (idx in influential_idx)
+      cat("  ", rownames(dat[cc, ])[idx], ": D2 =", round(mah[idx], 2), "\n")
+  } else {
+    cat("  None\n")
+    influential_names <- character(0)
   }
-}
 
-# ---- 8. Posterior summaries of best model ----
+  # --- 2e. Prior review ---
+  cat("=== Default blavaan priors (target = 'stan') ===\n")
+  cat("  Regression coefficients: normal(0, 10)\n")
+  cat("  Residual SD: student_t(3, 0, 2.5) [half-t]\n")
+  cat("  With N=41, these are weakly informative for most variables.\n\n")
 
-best_idx <- which.min(lavaan_aics)
-cat("\n=== Best model (by lavaan AIC): Model", best_idx, "===\n")
-cat("   ", model_names[best_idx], "\n\n")
+  # -- 3. Model definitions --
+  models <- make_models(rate_var)
 
-if (!is.null(bayes_fits[[best_idx]])) {
-  cat("Posterior summary:\n")
-  print(summary(bayes_fits[[best_idx]]))
+  model_names <- c(
+    "1: Flight -> rates",
+    "2: Flight -> genome -> rates",
+    "3: Flight -> rates & genes",
+    "4: Flight -> genome only",
+    "5: Flight -> rates & genome",
+    "6: Flight -> rates; rates+genes+flight -> genome",
+    "7: Flight -> rates; rates+genes -> genome"
+  )
 
-  # Credible intervals and probability of direction from MCMC draws
-  cat("\n=== Posterior 95% credible intervals & probability of direction ===\n")
-  mcmc_draws <- blavInspect(bayes_fits[[best_idx]], "mcmc")
-  draws_mat <- do.call(rbind, mcmc_draws)
-  par_table <- parameterTable(bayes_fits[[best_idx]])
-  reg_rows <- par_table[par_table$op == "~", ]
-
-  # mcmc columns use "lhs~rhs" naming
-  cat(sprintf("  %-20s %-20s %8s %8s %8s %8s\n",
-              "lhs", "rhs", "post.med", "CI.low", "CI.high", "P(dir)"))
-  cat(paste(rep("-", 88), collapse = ""), "\n")
-  for (r in seq_len(nrow(reg_rows))) {
-    col_name <- paste0(reg_rows$lhs[r], "~", reg_rows$rhs[r])
-    if (col_name %in% colnames(draws_mat)) {
-      draws <- draws_mat[, col_name]
-      ci <- quantile(draws, c(0.025, 0.975))
-      p_pos <- mean(draws > 0)
-      p_dir <- max(p_pos, 1 - p_pos)
-      direction <- ifelse(p_pos > 0.5, "+", "-")
-      cat(sprintf("  %-20s %-20s %8.4f %8.4f %8.4f %s %.3f\n",
-                  reg_rows$lhs[r], reg_rows$rhs[r],
-                  median(draws), ci[1], ci[2], direction, p_dir))
-    }
+  # -- 4. Frequentist lavaan reference fits --
+  cat("=== Frequentist lavaan AIC comparison ===\n")
+  lavaan_fits <- list()
+  lavaan_aics <- numeric(7)
+  for (i in 1:7) {
+    lavaan_fits[[i]] <- suppressWarnings(cfa(models[[i]], data = dat))
+    lavaan_aics[i] <- AIC(lavaan_fits[[i]])
   }
-}
+  aic_tab <- data.frame(
+    Model = model_names,
+    AIC = round(lavaan_aics, 1),
+    dAIC = round(lavaan_aics - min(lavaan_aics), 1),
+    n_free = sapply(lavaan_fits, function(f) f@Fit@npar)
+  )
+  print(aic_tab[order(aic_tab$AIC), ])
 
-# ---- 9. Posterior predictive checks ----
-# Assess whether the normal likelihood is adequate given data skewness.
-# Simulates data from the posterior and compares with observed skewness.
+  cat("\nSample size adequacy (N =", nrow(dat), "):\n")
+  for (i in 1:7) {
+    ratio <- round(nrow(dat) / aic_tab$n_free[i], 1)
+    flag <- ifelse(ratio < 5, " WARNING: < 5", "")
+    cat("  Model", i, ":", aic_tab$n_free[i], "free params, N/p =", ratio, flag, "\n")
+  }
+  cat("\n")
 
-cat("\n=== Posterior predictive checks ===\n\n")
+  # -- 5. Fit Bayesian path models --
+  cat("Fitting 7 Bayesian path models for", rate_label, "...\n")
+  cat("MCMC: 2 chains, 1000 warmup, 2000 sampling each\n\n")
 
-if (!is.null(bayes_fits[[best_idx]])) {
-  endogenous <- c("propAccelDnds", "logTotGenes_raw", "logTotLen_raw")
-
-  # Draw predicted values from the posterior
-  tryCatch({
-    y_rep <- predict(bayes_fits[[best_idx]])
-
-    cat("Observed vs posterior-predicted skewness:\n")
-    for (vname in endogenous) {
-      obs_skew <- skew(dat[[vname]])
-      # Predicted values column matching
-      pred_col <- grep(vname, colnames(y_rep), value = TRUE)
-      if (length(pred_col) > 0) {
-        pred_skew <- skew(y_rep[, pred_col[1]])
-        cat(sprintf("  %-20s observed=%.3f  predicted=%.3f\n",
-                    vname, obs_skew, pred_skew))
+  bayes_fits <- list()
+  for (i in 1:7) {
+    cat("--- Fitting Model", i, "(", rate_label, ") ---\n")
+    t0 <- Sys.time()
+    bayes_fits[[i]] <- tryCatch(
+      fit_bsem(models[[i]], dat),
+      error = function(e) {
+        cat("  Error:", conditionMessage(e), "\n")
+        return(NULL)
       }
+    )
+    elapsed <- round(difftime(Sys.time(), t0, units = "mins"), 1)
+    cat("  Completed in", elapsed, "minutes\n")
+  }
+
+  # -- 6. Convergence diagnostics --
+  cat("\n=== MCMC convergence diagnostics ===\n\n")
+
+  convergence_ok <- logical(7)
+
+  for (i in 1:7) {
+    if (is.null(bayes_fits[[i]])) {
+      cat("Model", i, ": FAILED TO FIT\n\n")
+      next
     }
-  }, error = function(e) {
-    cat("  predict() not available for this blavaan version.\n")
-    cat("  Performing manual residual check instead.\n\n")
 
-    # Manual residual normality check via lavaan residuals
-    resids <- lavResiduals(bayes_fits[[best_idx]])
-    if (!is.null(resids)) {
-      cat("  Standardised residual summary:\n")
-      print(resids$summary)
+    cat("--- Model", i, "---\n")
+
+    # Rhat (should be < 1.01)
+    rhats <- blavInspect(bayes_fits[[i]], "rhat")
+    cat("  Rhat:  max =", round(max(rhats, na.rm = TRUE), 4),
+        " min =", round(min(rhats, na.rm = TRUE), 4), "\n")
+    rhat_ok <- all(rhats < 1.01, na.rm = TRUE)
+    if (!rhat_ok) {
+      cat("  WARNING: Rhat > 1.01 for",
+          sum(rhats > 1.01, na.rm = TRUE), "parameters\n")
+    } else {
+      cat("  All Rhat < 1.01 (converged)\n")
     }
-  })
 
-}
+    # Effective sample size (should be > 400)
+    neffs <- blavInspect(bayes_fits[[i]], "neff")
+    cat("  ESS:   min =", round(min(neffs, na.rm = TRUE)),
+        " median =", round(median(neffs, na.rm = TRUE)), "\n")
+    ess_ok <- all(neffs >= 400, na.rm = TRUE)
+    if (!ess_ok) {
+      cat("  WARNING: ESS < 400 for",
+          sum(neffs < 400, na.rm = TRUE), "parameters\n")
+    } else {
+      cat("  All ESS >= 400 (adequate)\n")
+    }
 
-# ---- 10. Sensitivity: excluding influential observation ----
-# Re-fit best model without the Mahalanobis outlier to check robustness.
+    # Divergent transitions (Stan-specific; should be 0)
+    n_divergent <- 0
+    tryCatch({
+      stan_fit <- blavInspect(bayes_fits[[i]], "mcobj")
+      if (inherits(stan_fit, "stanfit")) {
+        sampler_params <- rstan::get_sampler_params(stan_fit, inc_warmup = FALSE)
+        n_divergent <- sum(sapply(sampler_params,
+                                  function(x) sum(x[, "divergent__"])))
+      }
+    }, error = function(e) NULL)
+    cat("  Divergent transitions:", n_divergent, "\n")
+    if (n_divergent > 0)
+      cat("  WARNING: consider increasing adapt_delta\n")
 
-if (length(influential_names) > 0 & !is.null(bayes_fits[[best_idx]])) {
-  cat("\n=== Sensitivity analysis: excluding", influential_names, "===\n\n")
+    convergence_ok[i] <- rhat_ok & ess_ok & (n_divergent == 0)
+    cat("  Overall:", ifelse(convergence_ok[i], "PASSED", "CHECK NEEDED"), "\n\n")
+  }
 
-  dat_trim <- dat[!rownames(dat) %in% influential_names, ]
-  cat("Trimmed data: N =", nrow(dat_trim), "\n")
+  # -- 7. Model comparison --
+  cat("=== Bayesian model comparison ===\n\n")
 
-  t0 <- Sys.time()
-  fit_trim <- tryCatch(
-    fit_bsem(models[[best_idx]], dat_trim),
-    error = function(e) { cat("  Error:", e$message, "\n"); NULL }
+  comparison_tab <- data.frame(
+    Model = model_names,
+    lavaan_AIC = round(lavaan_aics, 1),
+    lavaan_dAIC = round(lavaan_aics - min(lavaan_aics), 1),
+    WAIC = NA_real_,
+    LOO = NA_real_,
+    converged = convergence_ok,
+    stringsAsFactors = FALSE
   )
-  elapsed <- round(difftime(Sys.time(), t0, units = "mins"), 1)
-  cat("Fitted in", elapsed, "minutes\n\n")
 
-  if (!is.null(fit_trim)) {
-    # Convergence check
-    rhats_t <- blavInspect(fit_trim, "rhat")
-    neffs_t <- blavInspect(fit_trim, "neff")
-    cat("  Rhat max:", round(max(rhats_t, na.rm = TRUE), 4),
-        " ESS min:", round(min(neffs_t, na.rm = TRUE)), "\n\n")
+  for (i in 1:7) {
+    if (!is.null(bayes_fits[[i]])) {
+      tryCatch({
+        fm <- fitMeasures(bayes_fits[[i]])
+        if ("waic" %in% names(fm)) comparison_tab$WAIC[i] <- round(fm["waic"], 1)
+        if ("looic" %in% names(fm)) comparison_tab$LOO[i] <- round(fm["looic"], 1)
+      }, error = function(e) {
+        cat("  fitMeasures error for model", i, ":", conditionMessage(e), "\n")
+      })
+    }
+  }
 
-    # Compare coefficients from MCMC draws
-    draws_full <- do.call(rbind, blavInspect(bayes_fits[[best_idx]], "mcmc"))
-    draws_trim <- do.call(rbind, blavInspect(fit_trim, "mcmc"))
-    pt_full <- parameterTable(bayes_fits[[best_idx]])
-    reg_rows <- pt_full[pt_full$op == "~", ]
+  if (any(!is.na(comparison_tab$WAIC)))
+    comparison_tab$dWAIC <- round(comparison_tab$WAIC -
+                                    min(comparison_tab$WAIC, na.rm = TRUE), 1)
+  if (any(!is.na(comparison_tab$LOO)))
+    comparison_tab$dLOO <- round(comparison_tab$LOO -
+                                   min(comparison_tab$LOO, na.rm = TRUE), 1)
 
-    cat("Coefficient comparison (full vs trimmed):\n")
-    cat(sprintf("  %-20s %-20s %8s %8s %8s %8s %8s\n",
-                "lhs", "rhs", "med_full", "med_trim", "shift",
-                "CI.lo_f", "CI.hi_f"))
-    cat(paste(rep("-", 100), collapse = ""), "\n")
-    any_large <- FALSE
+  cat("Model comparison table:\n")
+  print(comparison_tab[order(comparison_tab$lavaan_AIC), ])
+
+  # Pairwise comparison of best two models by LOO
+  if (any(!is.na(comparison_tab$LOO))) {
+    loo_order <- order(comparison_tab$LOO, na.last = TRUE)
+    best_loo <- loo_order[1]
+    second_loo <- loo_order[2]
+    if (!is.null(bayes_fits[[best_loo]]) & !is.null(bayes_fits[[second_loo]])) {
+      cat("\n--- Pairwise: Model", best_loo, "vs Model", second_loo, "---\n")
+      tryCatch(print(blavCompare(bayes_fits[[best_loo]],
+                                 bayes_fits[[second_loo]])),
+               error = function(e) cat("  blavCompare error:", e$message, "\n"))
+    }
+  }
+
+  # -- 8. Posterior summaries of best model --
+  best_idx <- which.min(lavaan_aics)
+  cat("\n=== Best model (by lavaan AIC): Model", best_idx, "===\n")
+  cat("   ", model_names[best_idx], "\n\n")
+
+  if (!is.null(bayes_fits[[best_idx]])) {
+    cat("Posterior summary:\n")
+    print(summary(bayes_fits[[best_idx]]))
+
+    # Credible intervals and probability of direction from MCMC draws
+    cat("\n=== Posterior 95% credible intervals & probability of direction ===\n")
+    mcmc_draws <- blavInspect(bayes_fits[[best_idx]], "mcmc")
+    draws_mat <- do.call(rbind, mcmc_draws)
+    par_table <- parameterTable(bayes_fits[[best_idx]])
+    reg_rows <- par_table[par_table$op == "~", ]
+
+    # mcmc columns use "lhs~rhs" naming
+    cat(sprintf("  %-20s %-20s %8s %8s %8s %8s\n",
+                "lhs", "rhs", "post.med", "CI.low", "CI.high", "P(dir)"))
+    cat(paste(rep("-", 88), collapse = ""), "\n")
     for (r in seq_len(nrow(reg_rows))) {
       col_name <- paste0(reg_rows$lhs[r], "~", reg_rows$rhs[r])
-      if (col_name %in% colnames(draws_full) & col_name %in% colnames(draws_trim)) {
-        d_f <- draws_full[, col_name]; d_t <- draws_trim[, col_name]
-        ci_f <- quantile(d_f, c(0.025, 0.975))
-        ci_t <- quantile(d_t, c(0.025, 0.975))
-        shift <- median(d_t) - median(d_f)
-        post_sd <- sd(d_f)
-        flag <- ifelse(abs(shift) > 0.5 * post_sd, " <-- LARGE", "")
-        if (nchar(flag) > 0) any_large <- TRUE
-        cat(sprintf("  %-20s %-20s %8.4f %8.4f %8.4f %8.4f %8.4f%s\n",
+      if (col_name %in% colnames(draws_mat)) {
+        draws <- draws_mat[, col_name]
+        ci <- quantile(draws, c(0.025, 0.975))
+        p_pos <- mean(draws > 0)
+        p_dir <- max(p_pos, 1 - p_pos)
+        direction <- ifelse(p_pos > 0.5, "+", "-")
+        cat(sprintf("  %-20s %-20s %8.4f %8.4f %8.4f %s %.3f\n",
                     reg_rows$lhs[r], reg_rows$rhs[r],
-                    median(d_f), median(d_t), shift, ci_f[1], ci_f[2], flag))
+                    median(draws), ci[1], ci[2], direction, p_dir))
       }
     }
-    if (!any_large) cat("\nAll coefficients robust to exclusion of outlier\n")
-
-    save(fit_trim, file = "../data/bayesian_path_sensitivity.Rdata")
   }
+
+  # -- 9. Posterior predictive checks --
+  cat("\n=== Posterior predictive checks ===\n\n")
+
+  endogenous <- c(rate_var, "logTotGenes_raw", "logTotLen_raw")
+
+  if (!is.null(bayes_fits[[best_idx]])) {
+    tryCatch({
+      y_rep <- predict(bayes_fits[[best_idx]])
+
+      cat("Observed vs posterior-predicted skewness:\n")
+      for (vname in endogenous) {
+        obs_skew <- skew(dat[[vname]])
+        pred_col <- grep(vname, colnames(y_rep), value = TRUE)
+        if (length(pred_col) > 0) {
+          pred_skew <- skew(y_rep[, pred_col[1]])
+          cat(sprintf("  %-20s observed=%.3f  predicted=%.3f\n",
+                      vname, obs_skew, pred_skew))
+        }
+      }
+    }, error = function(e) {
+      cat("  predict() not available for this blavaan version.\n")
+      cat("  Performing manual residual check instead.\n\n")
+
+      resids <- lavResiduals(bayes_fits[[best_idx]])
+      if (!is.null(resids)) {
+        cat("  Standardised residual summary:\n")
+        print(resids$summary)
+      }
+    })
+  }
+
+  # -- 10. Sensitivity: excluding influential observation (all 7 models) --
+  fits_trim <- vector("list", 7)
+  if (length(influential_names) > 0) {
+    cat("\n=== Sensitivity analysis: excluding", influential_names, "===\n\n")
+
+    dat_trim <- dat[!rownames(dat) %in% influential_names, ]
+    cat("Trimmed data: N =", nrow(dat_trim), "\n")
+
+    for (i in 1:7) {
+      if (is.null(bayes_fits[[i]])) next
+      cat("--- Sensitivity Model", i, "(", rate_label, ") ---\n")
+      t0 <- Sys.time()
+      fits_trim[[i]] <- tryCatch(
+        fit_bsem(models[[i]], dat_trim),
+        error = function(e) { cat("  Error:", e$message, "\n"); NULL }
+      )
+      elapsed <- round(difftime(Sys.time(), t0, units = "mins"), 1)
+      cat("  Completed in", elapsed, "minutes\n")
+    }
+
+    # Print comparison for best model
+    cat("\n--- Detailed comparison for best model (Model", best_idx, ") ---\n")
+    if (!is.null(fits_trim[[best_idx]])) {
+      rhats_t <- blavInspect(fits_trim[[best_idx]], "rhat")
+      neffs_t <- blavInspect(fits_trim[[best_idx]], "neff")
+      cat("  Rhat max:", round(max(rhats_t, na.rm = TRUE), 4),
+          " ESS min:", round(min(neffs_t, na.rm = TRUE)), "\n\n")
+
+      draws_full <- do.call(rbind, blavInspect(bayes_fits[[best_idx]], "mcmc"))
+      draws_trim <- do.call(rbind, blavInspect(fits_trim[[best_idx]], "mcmc"))
+      pt_full <- parameterTable(bayes_fits[[best_idx]])
+      reg_rows <- pt_full[pt_full$op == "~", ]
+
+      cat("Coefficient comparison (full vs trimmed):\n")
+      cat(sprintf("  %-20s %-20s %8s %8s %8s %8s %8s\n",
+                  "lhs", "rhs", "med_full", "med_trim", "shift",
+                  "CI.lo_f", "CI.hi_f"))
+      cat(paste(rep("-", 100), collapse = ""), "\n")
+      any_large <- FALSE
+      for (r in seq_len(nrow(reg_rows))) {
+        col_name <- paste0(reg_rows$lhs[r], "~", reg_rows$rhs[r])
+        if (col_name %in% colnames(draws_full) & col_name %in% colnames(draws_trim)) {
+          d_f <- draws_full[, col_name]; d_t <- draws_trim[, col_name]
+          ci_f <- quantile(d_f, c(0.025, 0.975))
+          ci_t <- quantile(d_t, c(0.025, 0.975))
+          shift <- median(d_t) - median(d_f)
+          post_sd <- sd(d_f)
+          flag <- ifelse(abs(shift) > 0.5 * post_sd, " <-- LARGE", "")
+          if (nchar(flag) > 0) any_large <- TRUE
+          cat(sprintf("  %-20s %-20s %8.4f %8.4f %8.4f %8.4f %8.4f%s\n",
+                      reg_rows$lhs[r], reg_rows$rhs[r],
+                      median(d_f), median(d_t), shift, ci_f[1], ci_f[2], flag))
+        }
+      }
+      if (!any_large) cat("\nAll coefficients robust to exclusion of outlier\n")
+    }
+  }
+
+  # Return results
+  list(
+    bayes_fits = bayes_fits,
+    lavaan_fits = lavaan_fits,
+    comparison_tab = comparison_tab,
+    best_idx = best_idx,
+    fits_trim = fits_trim,
+    analysis_vars = analysis_vars,
+    var_labels = var_labels,
+    model_names = model_names,
+    influential_names = influential_names
+  )
 }
 
-# ---- 11. Save results ----
+# ---- Main loop over rate metrics ----
 
-save(bayes_fits, lavaan_fits, comparison_tab, dat,
-     analysis_vars, var_labels, model_names, best_idx,
+all_results <- list()
+for (metric in names(rate_metrics)) {
+  all_results[[metric]] <- run_metric_analysis(
+    rate_var = rate_metrics[metric],
+    rate_label = rate_labels[metric],
+    dat = dat
+  )
+}
+
+# ---- Save results ----
+
+save(all_results, dat, rate_metrics, rate_labels,
      file = "../data/bayesian_path_results.Rdata")
-write.csv(comparison_tab, "../data/bayesian_model_comparison.csv",
-          row.names = FALSE)
+
+for (metric in names(rate_metrics)) {
+  write.csv(all_results[[metric]]$comparison_tab,
+            paste0("../data/bayesian_model_comparison_", metric, ".csv"),
+            row.names = FALSE)
+}
+
+# Also save dN/dS best-model sensitivity result for backward compatibility
+if (!is.null(all_results$dnds$fits_trim[[all_results$dnds$best_idx]])) {
+  fit_trim <- all_results$dnds$fits_trim[[all_results$dnds$best_idx]]
+  save(fit_trim, file = "../data/bayesian_path_sensitivity.Rdata")
+}
 
 cat("\nResults saved to ../data/bayesian_path_results.Rdata\n")
-cat("Comparison table saved to ../data/bayesian_model_comparison.csv\n")
+cat("Comparison tables saved to ../data/bayesian_model_comparison_{dnds,dn,ds}.csv\n")
 cat("Figures: run 16_plot_bayesian_results.Rscript\n")
 cat("\nDone.\n")
